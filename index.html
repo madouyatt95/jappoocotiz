@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=11" />
+    <link rel="stylesheet" href="./styles.css?v=12" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -81,7 +81,7 @@
 
           <section class="section-block" aria-labelledby="situation-title">
             <div class="section-heading">
-              <div><p class="eyebrow">Mes deux caisses</p><h2 id="situation-title">Ma situation</h2></div>
+              <div><p class="eyebrow">Mes caisses</p><h2 id="situation-title">Ma situation</h2></div>
               <button class="text-btn" type="button" data-nav="cotisations">Détails <span aria-hidden="true">→</span></button>
             </div>
             <div class="contribution-list" id="home-contribution-list"></div>
@@ -95,7 +95,7 @@
             <button class="listen-chip compact" type="button" data-speak="contributions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 9.5a4 4 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/></svg>Écouter</button>
           </div>
           <div class="notice-card"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Statuts protégés</strong><p>Seules les personnes habilitées peuvent enregistrer un paiement en espèces.</p></div></div>
-          <div class="fund-switch" role="tablist" aria-label="Choisir la caisse à afficher">
+          <div class="fund-switch" id="contribution-fund-switch" role="tablist" aria-label="Choisir la caisse à afficher">
             <button class="active" type="button" role="tab" aria-selected="true" data-fund-view="family">Caisse famille</button>
             <button type="button" role="tab" aria-selected="false" data-fund-view="death">Caisse décès</button>
           </div>
@@ -109,10 +109,10 @@
 
         <section class="page" id="page-caisse" data-page="caisse" aria-labelledby="caisse-title">
           <div class="page-heading">
-            <div><p class="eyebrow">Caisse famille et décès</p><h1 id="caisse-title">Les caisses</h1></div>
+            <div><p class="eyebrow">Comptes de cotisation</p><h1 id="caisse-title">Les caisses</h1></div>
             <button class="icon-btn soft" type="button" data-speak="fund" aria-label="Écouter le résumé des caisses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 9.5a4 4 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/></svg></button>
           </div>
-          <div class="fund-switch" role="tablist" aria-label="Choisir la caisse">
+          <div class="fund-switch" id="cash-fund-switch" role="tablist" aria-label="Choisir la caisse">
             <button class="active" type="button" role="tab" aria-selected="true" data-cash-fund="family">Famille</button>
             <button type="button" role="tab" aria-selected="false" data-cash-fund="death">Décès</button>
           </div>
@@ -183,7 +183,7 @@
             <details class="management-panel member-access-section hidden" id="member-access-section">
               <summary class="management-summary"><span class="management-icon">👥</span><span><small>Validation obligatoire</small><strong id="member-access-title">Comptes et droits</strong></span><span class="count-badge" id="pending-member-count">0</span><b aria-hidden="true">⌄</b></summary>
               <div class="management-panel-content">
-              <p class="section-help">Chaque nouveau compte reste bloqué jusqu’à votre choix : lecture seule, saisie sur la caisse Famille, la caisse Décès ou les deux.</p>
+              <p class="section-help">Chaque nouveau compte reste bloqué jusqu’à votre choix : lecture seule ou saisie sur une caisse précise, voire sur toutes les caisses.</p>
               <div class="member-access-toolbar"><label><span class="visually-hidden">Rechercher un membre</span><input id="member-access-search" type="search" placeholder="Rechercher un nom ou pseudo" /></label><label><span class="visually-hidden">Filtrer les comptes</span><select id="member-access-filter"><option value="all">Tous</option><option value="pending">En attente</option><option value="approved">Validés</option><option value="rejected">Refusés</option></select></label></div>
               <p class="member-access-result" id="member-access-result"></p>
               <div class="member-access-list" id="member-access-list"></div>
@@ -192,7 +192,7 @@
             <div class="admin-kpis">
               <article><span class="kpi-icon green">↗</span><small>Solde des caisses</small><strong id="admin-cash-total">0 €</strong><em>Encaissements moins dépenses</em></article>
               <article><span class="kpi-icon orange">#</span><small>Paiements enregistrés</small><strong id="admin-payment-count">0</strong><em>Historique vide</em></article>
-              <article><span class="kpi-icon blue">2</span><small>Caisses actives</small><strong>2</strong><em>Famille et décès</em></article>
+              <article><span class="kpi-icon blue" id="admin-fund-count-icon">2</span><small>Caisses actives</small><strong id="admin-fund-count">2</strong><em id="admin-fund-count-detail">Famille et décès</em></article>
             </div>
             <section class="section-block admin-actions" aria-labelledby="quick-actions-title">
               <div class="section-heading"><div><p class="eyebrow">Actions autorisées</p><h2 id="quick-actions-title">Mouvements de caisse</h2></div></div>
@@ -201,7 +201,7 @@
             <details class="management-panel">
               <summary class="management-summary"><span class="management-icon">◎</span><span><small>Mensualités</small><strong id="member-status-title">Situation des membres</strong></span><b aria-hidden="true">⌄</b></summary>
               <div class="management-panel-content">
-              <div class="fund-switch compact" role="tablist" aria-label="Caisse pour la situation des membres">
+              <div class="fund-switch compact" id="admin-fund-switch" role="tablist" aria-label="Caisse pour la situation des membres">
                 <button class="active" type="button" role="tab" aria-selected="true" data-admin-fund="family">Famille</button>
                 <button type="button" role="tab" aria-selected="false" data-admin-fund="death">Décès</button>
               </div>
@@ -209,9 +209,9 @@
               </div>
             </details>
             <details class="management-panel" id="member-schedule-section">
-              <summary class="management-summary"><span class="management-icon">▦</span><span><small>Administrateur uniquement</small><strong id="member-schedule-title">Mensualités dues</strong></span><b aria-hidden="true">⌄</b></summary>
+              <summary class="management-summary"><span class="management-icon">▦</span><span><small>Administrateur uniquement</small><strong id="member-schedule-title">Période personnalisée</strong></span><b aria-hidden="true">⌄</b></summary>
               <div class="management-panel-content">
-              <p class="section-help">Choisissez un membre, une caisse et la période exacte. Les paiements existants sont conservés.</p>
+              <p class="section-help">Optionnel : les mensualités courantes sont générées automatiquement. Utilisez cette section seulement pour modifier la date de départ ou corriger une période historique.</p>
               <form class="schedule-form" id="member-schedule-form">
                 <label class="form-field"><span>Membre</span><select id="schedule-member" required><option value="">Choisir un membre</option></select></label>
                 <label class="form-field"><span>Caisse</span><select id="schedule-fund" required><option value="">Choisir une caisse</option></select></label>
@@ -224,6 +224,7 @@
             <details class="management-panel" id="fund-settings-panel">
               <summary class="management-summary"><span class="management-icon">⚙</span><span><small>Administrateur uniquement</small><strong id="fund-settings-title">Configurer les caisses</strong></span><b aria-hidden="true">⌄</b></summary>
               <div class="management-panel-content">
+              <button class="secondary-btn full add-fund-button" type="button" data-action="create-fund"><span aria-hidden="true">＋</span>Ajouter une caisse</button>
               <div class="fund-settings-list" id="fund-settings-list"></div>
               </div>
             </details>
@@ -265,7 +266,7 @@
         <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Accès contrôlé</strong><p>Le membre ne peut pas enregistrer lui-même ce paiement.</p></div></div>
         <label class="form-field"><span>1. Membre</span><select id="payment-member" required><option value="">Choisir un membre</option></select></label>
         <div class="form-field"><span>2. Caisse</span><div class="quick-fund-grid" id="quick-fund-grid"></div><select class="visually-hidden" id="payment-contribution" required aria-label="Caisse concernée"></select></div>
-        <div class="quick-payment-summary" id="quick-payment-summary"><span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small></div>
+        <div class="quick-payment-summary" id="quick-payment-summary"><span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" disabled>À jour</button></div>
         <div class="form-grid"><label class="form-field"><span>3. Montant reçu</span><div class="money-input"><input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /><b>€</b></div></label><label class="form-field"><span>Date</span><input id="payment-date" type="date" required /></label></div>
         <div class="payment-allocation-preview" id="payment-allocation-preview" role="status" aria-live="polite"><span>Affectation automatique</span><strong>Saisissez un montant</strong><small>Les arriérés seront régularisés du mois le plus ancien au plus récent.</small></div>
         <details class="payment-details"><summary>Ajouter une note</summary><label class="form-field"><span>Note facultative</span><input id="payment-note" type="text" maxlength="160" placeholder="Ex. reçu remis au membre" /></label><label class="form-field"><span>Moyen de paiement</span><input id="payment-method" type="text" value="Espèces" readonly /></label></details>
@@ -295,7 +296,7 @@
         <label class="form-field"><span>Description</span><input id="fund-config-description" type="text" maxlength="160" /></label>
         <div class="form-grid"><label class="form-field"><span>Mensualité</span><div class="money-input"><input id="fund-config-amount" type="number" min="0.01" step="0.01" required /><b>€</b></div></label><label class="form-field"><span>Jour limite</span><input id="fund-config-day" type="number" min="1" max="28" required /></label></div>
         <label class="form-field"><span>Date de début</span><input id="fund-config-start" type="month" required /></label>
-        <div class="notice-card compact-notice"><span class="feature-icon green">✓</span><div><strong>Historique protégé</strong><p>Les mensualités déjà partiellement ou totalement payées conservent leur montant historique.</p></div></div>
+        <div class="notice-card compact-notice"><span class="feature-icon green">✓</span><div><strong>Historique protégé</strong><p>Les mensualités déjà payées conservent leur montant historique. Une nouvelle caisse génère automatiquement les échéances des membres actifs.</p></div></div>
         <button class="primary-btn full" type="submit">Enregistrer la configuration</button>
       </form>
     </section>
@@ -313,7 +314,7 @@
       </div>
       <div class="voice-shortcuts" aria-label="Informations vocales disponibles">
         <button type="button" data-voice-command="summary"><span>💶</span><strong>Mon résumé</strong><small>Reste et retards</small></button>
-        <button type="button" data-voice-command="details"><span>📋</span><strong>Mes deux caisses</strong><small>Situation détaillée</small></button>
+        <button type="button" data-voice-command="details"><span>📋</span><strong>Mes caisses</strong><small>Situation détaillée</small></button>
       </div>
       <p class="voice-privacy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg>Consultation vocale uniquement. Aucune opération financière n’est possible.</p>
     </section>
@@ -406,7 +407,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
-    <script src="./supabase-client.js?v=9"></script>
-    <script src="./app.js?v=12" defer></script>
+    <script src="./supabase-client.js?v=10"></script>
+    <script src="./app.js?v=13" defer></script>
   </body>
 </html>

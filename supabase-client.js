@@ -242,6 +242,7 @@
     const familyId = membership.family_id;
     const authorized = membership.access_level === "write" && ["admin", "treasurer", "cash_collector"].includes(membership.role);
     const administrator = authorized && membership.role === "admin";
+    if (authorized) await callRpc("refresh_due_periods", { p_family_id: familyId });
     const [families, funds, periods, payments, expenses, activityPayments, members, schedules] = await Promise.all([
       query("family_spaces", { select: "id,name,currency", id: `eq.${familyId}`, limit: "1" }),
       query("funds", { select: "id,code,name,description,monthly_amount,frequency,start_date,due_day,display_order,active", family_id: `eq.${familyId}`, active: "eq.true", order: "display_order.asc" }),
@@ -337,6 +338,10 @@
     return callRpc("configure_fund", configuration);
   }
 
+  async function createFund(configuration) {
+    return callRpc("create_fund", configuration);
+  }
+
   async function reviewMemberAccess(review) {
     return callRpc("review_member_access", review);
   }
@@ -387,6 +392,7 @@
     recordCashPayment,
     recordCashExpense,
     configureFund,
+    createFund,
     reviewMemberAccess,
     resetMemberLoginCode,
     setMemberFundSchedule,

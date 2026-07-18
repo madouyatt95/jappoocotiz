@@ -301,7 +301,7 @@ main { min-height: calc(100dvh - 150px); }
 .access-member-card.pending .access-member-head em { color: #9a611a; background: #faead1; }
 .access-member-card.rejected .access-member-head em { color: var(--red); background: #f9e5e2; }
 .access-member-controls { padding: 10px 12px 12px; border-top: 1px solid #edf1ef; background: #fcfdfc; }
-.access-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.access-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 6px; }
 .access-choice button { min-height: 39px; padding: 0 7px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: #f8faf8; font-size: 8px; font-weight: 850; cursor: pointer; }
 .access-choice button.active { border-color: var(--brand); color: white; background: var(--brand); }
 .access-choice button:disabled, .reject-access:disabled { opacity: .55; cursor: wait; }
@@ -380,7 +380,7 @@ main { min-height: calc(100dvh - 150px); }
 .toast { position: fixed; z-index: 100; top: calc(15px + var(--safe-top)); left: 50%; width: max-content; max-width: calc(100% - 36px); padding: 11px 16px; border-radius: 12px; color: white; background: #173d35; box-shadow: var(--shadow); font-size: 11px; font-weight: 750; opacity: 0; pointer-events: none; transform: translate(-50%,-15px); transition: .25s; }.toast.show { opacity: 1; transform: translate(-50%,0); }
 
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; }
-.fund-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 0 0 15px; padding: 4px; border-radius: 15px; background: #e5ebe8; }
+.fund-switch { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 5px; margin: 0 0 15px; padding: 4px; border-radius: 15px; background: #e5ebe8; }
 .fund-switch button { min-height: 42px; padding: 0 10px; border: 0; border-radius: 11px; color: var(--muted); background: transparent; font-size: 11px; font-weight: 850; cursor: pointer; }
 .fund-switch button.active { color: var(--brand); background: white; box-shadow: 0 4px 13px rgba(22,57,48,.09); }
 .fund-switch.compact button { min-height: 36px; }
@@ -388,6 +388,7 @@ main { min-height: calc(100dvh - 150px); }
 .fund-config-shortcut > span:first-child { display: grid; flex: 0 0 36px; height: 36px; place-items: center; border-radius: 12px; color: white; background: var(--brand); font-size: 17px; }
 .fund-config-shortcut > span:last-child { display: flex; min-width: 0; flex-direction: column; }
 .fund-config-shortcut strong { font-size: 11px; }.fund-config-shortcut small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.add-fund-button { margin-bottom: 10px; }
 .fund-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 0 14px 13px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--line); }
 .fund-stat-grid > div { padding: 10px 8px; background: #fafbf9; text-align: center; }
 .fund-stat-grid small, .fund-stat-grid strong { display: block; }.fund-stat-grid small { color: var(--muted); font-size: 8px; }.fund-stat-grid strong { margin-top: 3px; font-size: 12px; }
@@ -409,10 +410,12 @@ main { min-height: calc(100dvh - 150px); }
 .payment-fab span { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 50%; color: white; background: var(--brand); font-size: 24px; font-weight: 500; line-height: 1; }
 .payment-fab strong { font-size: 11px; font-weight: 900; }
 .admin-mode .payment-fab { bottom: calc(20px + var(--safe-bottom)); }
-.quick-fund-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.quick-fund-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .quick-fund-grid button { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; gap: 2px 9px; min-height: 70px; padding: 10px; border: 2px solid var(--line); border-radius: 15px; color: var(--ink); background: white; text-align: left; cursor: pointer; }
 .quick-fund-grid button.active { border-color: var(--brand-2); background: #edf5f1; }.quick-fund-grid .contribution-icon { grid-row: 1 / 3; width: 40px; height: 40px; flex-basis: 40px; }.quick-fund-grid strong { align-self: end; font-size: 10px; }.quick-fund-grid small { color: var(--muted); font-size: 8px; }
-.quick-payment-summary { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 4px 0 14px; padding: 13px; border-radius: 15px; color: white; background: var(--brand); }.quick-payment-summary span { color: #c9ded8; font-size: 9px; }.quick-payment-summary strong { grid-row: 1 / 3; grid-column: 2; align-self: center; color: var(--lime); font-size: 20px; }.quick-payment-summary small { color: #d7e7e2; font-size: 8px; }
+.quick-payment-summary { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin: 4px 0 14px; padding: 13px; border-radius: 15px; color: white; background: var(--brand); }.quick-payment-summary span { color: #c9ded8; font-size: 9px; }.quick-payment-summary strong { grid-row: 1 / 3; grid-column: 2; align-self: center; color: var(--lime); font-size: 20px; }.quick-payment-summary small { color: #d7e7e2; font-size: 8px; }
+.settle-arrears-button { grid-column: 1 / -1; min-height: 39px; margin-top: 7px; border: 1px solid rgba(255,255,255,.35); border-radius: 11px; color: var(--brand); background: var(--lime); font-size: 10px; font-weight: 900; cursor: pointer; }
+.settle-arrears-button:disabled { color: #8ba098; background: #d8e5df; cursor: default; opacity: .8; }
 .month-chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }.month-chips button { min-height: 38px; padding: 0 4px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: white; font-size: 9px; font-weight: 850; cursor: pointer; }.month-chips button.active { border-color: var(--brand); color: white; background: var(--brand); }
 .payment-allocation-preview { display: flex; flex-direction: column; gap: 3px; margin: -2px 0 14px; padding: 11px 12px; border: 1px solid #d5e3dd; border-radius: 13px; color: var(--brand); background: #edf6ef; }
 .payment-allocation-preview span { color: #4e7067; font-size: 8px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }

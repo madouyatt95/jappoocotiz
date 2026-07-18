@@ -1,7 +1,7 @@
 # Activation Supabase
 
 1. Ouvrir le projet Supabase qui correspond à la référence configurée.
-2. Exécuter les fichiers de `migrations/` dans l’ordre de leur nom dans le SQL Editor.
+2. Exécuter les fichiers de `migrations/` dans l’ordre de leur nom dans le SQL Editor. La migration `202607190007_dynamic_funds_and_due_refresh.sql` ajoute les caisses extensibles et maintient automatiquement les mensualités jusqu’au mois courant.
 3. Dans **Authentication > URL Configuration**, définir le Site URL sur
    `https://jappo-cotiz.vercel.app` et autoriser
    `https://jappo-cotiz.vercel.app/**` comme Redirect URL.

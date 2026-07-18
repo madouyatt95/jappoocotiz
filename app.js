@@ -1,6 +1,5 @@
 const STORAGE_KEY = "jappo-cotiz-read-cache-v3";
 const NOTIFICATION_SEEN_KEY = "jappo-cotiz-last-notification-v1";
-const ALLOWED_CONTRIBUTIONS = ["family", "death"];
 const AUTHORIZED_ROLES = ["admin", "treasurer", "cash_collector"];
 
 const initialState = {
@@ -48,13 +47,26 @@ function loadState() {
     if (saved?.payments && saved?.contributions && saved?.activities) {
       const clean = cloneInitialState();
       clean.settings = { ...clean.settings, ...saved.settings };
-      clean.payments = saved.payments.filter((payment) => payment.method === "Espèces" && ALLOWED_CONTRIBUTIONS.includes(payment.contributionId));
-      clean.expenses = Array.isArray(saved.expenses) ? saved.expenses.filter((expense) => ALLOWED_CONTRIBUTIONS.includes(expense.contributionId)) : [];
+      clean.payments = saved.payments.filter((payment) => payment.method === "Espèces" && payment.contributionId);
+      clean.expenses = Array.isArray(saved.expenses) ? saved.expenses.filter((expense) => expense.contributionId) : [];
       clean.activities = saved.activities.filter((activity) => activity.source === "supabase");
-      clean.contributions = clean.contributions.map((base) => {
-        const stored = saved.contributions.find(({ id }) => id === base.id);
-        return stored ? { ...base, paid: Number(stored.paid) || 0, amount: Number(stored.amount) || 0, due: stored.due || null, status: stored.status || base.status } : base;
-      });
+      clean.contributions = saved.contributions.length
+        ? saved.contributions.filter((item) => item?.id && item?.name).map((stored, index) => ({
+          id: stored.id,
+          backendId: stored.backendId || null,
+          name: stored.name,
+          description: stored.description || "Cotisation mensuelle",
+          monthlyAmount: Number(stored.monthlyAmount) || 5,
+          startDate: stored.startDate || "2021-01-01",
+          dueDay: Number(stored.dueDay) || 10,
+          amount: Number(stored.amount) || 0,
+          paid: Number(stored.paid) || 0,
+          due: stored.due || null,
+          missingMonths: Number(stored.missingMonths) || 0,
+          status: stored.status || "unconfigured",
+          icon: stored.icon || (index % 2 ? "shield" : "receipt")
+        }))
+        : clean.contributions;
       return clean;
     }
   } catch (error) {
@@ -166,8 +178,9 @@ function canRecordCash() {
 
 function writableFundCodes(member = workspace?.membership) {
   if (!member) return [];
-  if (member.role === "admin" && member.approval_status === "approved") return ALLOWED_CONTRIBUTIONS.slice();
-  return Array.from(new Set(member.write_fund_codes || [])).filter((code) => ALLOWED_CONTRIBUTIONS.includes(code));
+  const availableCodes = (workspace?.funds || []).filter((fund) => fund.active !== false).map((fund) => fund.code);
+  if (member.role === "admin" && member.approval_status === "approved") return availableCodes;
+  return Array.from(new Set(member.write_fund_codes || [])).filter((code) => availableCodes.includes(code));
 }
 
 function canWriteFund(code) {
@@ -190,12 +203,11 @@ function accessLabel(member) {
   if (!member) return "Accès protégé";
   if (member.approval_status === "pending") return "En attente";
   if (member.approval_status === "rejected") return "Accès refusé";
-  if (member.role === "admin") return "Administrateur • deux caisses";
+  if (member.role === "admin") return `Administrateur • ${workspace?.funds?.length || 0} caisse${workspace?.funds?.length > 1 ? "s" : ""}`;
   if (member.access_level !== "write") return "Lecture seule";
   const codes = writableFundCodes(member);
-  if (codes.length === 2) return "Saisie • Famille + Décès";
-  if (codes[0] === "family") return "Saisie • Caisse famille";
-  if (codes[0] === "death") return "Saisie • Caisse décès";
+  if (codes.length > 1) return `Saisie • ${codes.length} caisses`;
+  if (codes[0]) return `Saisie • ${workspace?.funds?.find((fund) => fund.code === codes[0])?.name || "une caisse"}`;
   return "Lecture seule";
 }
 
@@ -245,17 +257,32 @@ function applyWorkspace(nextWorkspace) {
   memberNames.set(workspace.membership.id, workspace.membership.full_name);
   const fundById = new Map(workspace.funds.map((fund) => [fund.id, fund]));
 
-  state.contributions = cloneInitialState().contributions.map((base) => {
-    const fund = workspace.funds.find((item) => item.code === base.id);
-    const situation = fund ? fundSituation(workspace.membership.id, fund.id) : { amount: 0, paid: 0, missingMonths: 0, lateMonths: 0, nextDue: null };
+  const defaultByCode = new Map(cloneInitialState().contributions.map((item) => [item.id, item]));
+  state.contributions = workspace.funds.map((fund, index) => {
+    const base = defaultByCode.get(fund.code) || {
+      id: fund.code,
+      name: fund.name,
+      description: fund.description || "Cotisation mensuelle",
+      monthlyAmount: Number(fund.monthly_amount),
+      startDate: fund.start_date,
+      dueDay: Number(fund.due_day),
+      amount: 0,
+      paid: 0,
+      due: null,
+      missingMonths: 0,
+      status: "unconfigured",
+      icon: index % 2 ? "shield" : "receipt"
+    };
+    const situation = fundSituation(workspace.membership.id, fund.id);
     return {
       ...base,
-      backendId: fund?.id || null,
-      name: fund?.name || base.name,
-      description: fund?.description || base.description,
-      monthlyAmount: Number(fund?.monthly_amount || base.monthlyAmount),
-      startDate: fund?.start_date || base.startDate,
-      dueDay: Number(fund?.due_day || base.dueDay),
+      id: fund.code,
+      backendId: fund.id,
+      name: fund.name,
+      description: fund.description || base.description,
+      monthlyAmount: Number(fund.monthly_amount),
+      startDate: fund.start_date,
+      dueDay: Number(fund.due_day),
       amount: situation.amount,
       paid: situation.paid,
       due: situation.nextDue,
@@ -270,7 +297,7 @@ function applyWorkspace(nextWorkspace) {
       id: payment.id,
       memberId: payment.member_id,
       member: memberNames.get(payment.member_id) || "Membre",
-      contributionId: fund?.code || "family",
+      contributionId: fund?.code || "unknown",
       contribution: fund?.name || "Caisse",
       amount: Number(payment.amount || 0),
       method: "Espèces",
@@ -286,7 +313,7 @@ function applyWorkspace(nextWorkspace) {
     const fund = fundById.get(expense.fund_id);
     return {
       id: expense.id,
-      contributionId: fund?.code || "family",
+      contributionId: fund?.code || "unknown",
       contribution: fund?.name || "Caisse",
       amount: Number(expense.amount || 0),
       reason: expense.reason || "Dépense de caisse",
@@ -334,6 +361,24 @@ function renderHomeContributions() {
         <span class="contribution-amount"><strong>${contributionAmountLabel(item)}</strong><em class="status-badge ${status.tone}">${status.label}</em></span>
       </article>`;
   }).join("");
+}
+
+function renderFundSelectors() {
+  const contributions = state.contributions;
+  const fallback = contributions[0]?.id || state.contributions[0]?.id || "family";
+  if (!contributions.some((item) => item.id === currentFundView)) currentFundView = fallback;
+  if (!contributions.some((item) => item.id === cashFundView)) cashFundView = fallback;
+
+  const renderButtons = (items, selected, attribute) => items.map((item) => `
+    <button class="${item.id === selected ? "active" : ""}" type="button" role="tab" aria-selected="${item.id === selected}" ${attribute}="${escapeHTML(item.id)}">${escapeHTML(item.name)}</button>
+  `).join("");
+
+  document.querySelector("#contribution-fund-switch").innerHTML = renderButtons(contributions, currentFundView, "data-fund-view");
+  document.querySelector("#cash-fund-switch").innerHTML = renderButtons(contributions, cashFundView, "data-cash-fund");
+
+  const writable = contributions.filter((item) => canWriteFund(item.id));
+  if (!writable.some((item) => item.id === adminFundView)) adminFundView = writable[0]?.id || fallback;
+  document.querySelector("#admin-fund-switch").innerHTML = renderButtons(writable, adminFundView, "data-admin-fund");
 }
 
 function renderDetailedContributions() {
@@ -402,7 +447,7 @@ function renderFundAccount() {
   const movementCount = fundPayments.length + state.expenses.filter((expense) => expense.contributionId === fund.id).length;
   document.querySelector("#cash-updated").textContent = movementCount ? `${movementCount} mouvement${movementCount > 1 ? "s" : ""} enregistré${movementCount > 1 ? "s" : ""}` : "Aucune opération enregistrée";
   document.querySelector("#fund-period-card").innerHTML = `
-    <div><span class="contribution-icon ${fund.id === "family" ? "green" : "indigo"}">${iconSVG(fund.icon)}</span><div><small>Caisse sélectionnée</small><strong>${escapeHTML(fund.name)}</strong></div></div>
+    <div><span class="contribution-icon ${fund.id === "family" ? "green" : fund.id === "death" ? "indigo" : "orange"}">${iconSVG(fund.icon)}</span><div><small>Caisse sélectionnée</small><strong>${escapeHTML(fund.name)}</strong></div></div>
     <div class="fund-config-facts"><span><small>Mensualité</small><b>${formatMoney(fund.monthlyAmount)} €</b></span><span><small>Depuis</small><b>${formatPeriod(fund.startDate)}</b></span><span><small>Échéance</small><b>Le ${fund.dueDay}</b></span></div>`;
 }
 
@@ -450,7 +495,7 @@ function renderMemberStatuses() {
     container.innerHTML = '<div class="empty-state compact-empty"><span>👥</span><strong>Aucun membre</strong><p>Les membres rattachés apparaîtront ici.</p></div>';
     return;
   }
-  if (!canWriteFund(adminFundView)) adminFundView = writableFundCodes()[0] || "family";
+  if (!canWriteFund(adminFundView)) adminFundView = writableFundCodes()[0] || state.contributions[0]?.id;
   const fund = workspace.funds.find((item) => item.code === adminFundView && canWriteFund(item.code));
   if (!fund) return;
   container.innerHTML = members.map((member) => {
@@ -511,13 +556,18 @@ function renderMemberAccess() {
     const status = pending ? "En attente de validation" : rejected ? "Accès refusé" : accessLabel(member);
     const identity = member.pseudo ? `${member.full_name} • @${member.pseudo}` : member.full_name;
     const memberCodes = writableFundCodes(member).slice().sort().join(",");
+    const activeFundCodes = (workspace.funds || []).map((fund) => fund.code).sort();
+    const fundAccessButtons = (workspace.funds || []).map((fund) => {
+      const onlyThisFund = memberCodes === fund.code;
+      return `<button class="${!pending && !rejected && member.access_level === "write" && onlyThisFund ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="${escapeHTML(fund.code)}">${escapeHTML(fund.name)}</button>`;
+    }).join("");
+    const allCodes = activeFundCodes.join(",");
     const controls = protectedAdmin
-      ? '<span class="protected-access">Écriture permanente sur les deux caisses</span>'
+      ? `<span class="protected-access">Écriture permanente sur ${workspace.funds.length} caisse${workspace.funds.length > 1 ? "s" : ""}</span>`
       : `<div class="access-choice" role="group" aria-label="Droits de ${escapeHTML(member.full_name)}">
           <button class="${!pending && !rejected && member.access_level === "read" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="read" data-write-funds="">Lecture seule</button>
-          <button class="${!pending && !rejected && member.access_level === "write" && memberCodes === "family" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="family">Famille</button>
-          <button class="${!pending && !rejected && member.access_level === "write" && memberCodes === "death" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="death">Décès</button>
-          <button class="${!pending && !rejected && member.access_level === "write" && memberCodes === "death,family" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="family,death">Les deux</button>
+          ${fundAccessButtons}
+          ${workspace.funds.length > 1 ? `<button class="${!pending && !rejected && member.access_level === "write" && memberCodes === allCodes ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="${escapeHTML(allCodes)}">Toutes les caisses</button>` : ""}
         </div>
         ${!pending && !rejected && member.pseudo ? `<button class="reset-code-button" type="button" data-reset-member-code="${member.id}">Créer un nouveau code</button>` : ""}
         ${pending ? `<button class="reject-access" type="button" data-reject-member="${member.id}">Refuser</button>` : ""}`;
@@ -542,7 +592,7 @@ function renderFundSettings() {
   }
   container.innerHTML = workspace.funds.map((fund) => `
     <article class="fund-setting-row">
-      <span class="contribution-icon ${fund.code === "family" ? "green" : "indigo"}">${iconSVG(fund.code === "family" ? "family" : "shield")}</span>
+      <span class="contribution-icon ${fund.code === "family" ? "green" : fund.code === "death" ? "indigo" : "orange"}">${iconSVG(fund.code === "family" ? "family" : fund.code === "death" ? "shield" : "receipt")}</span>
       <div><strong>${escapeHTML(fund.name)}</strong><small>${formatMoney(Number(fund.monthly_amount))} € / mois • depuis ${formatPeriod(fund.start_date)}</small></div>
       ${workspace.membership.role === "admin" ? `<button type="button" data-edit-fund="${escapeHTML(fund.code)}" aria-label="Modifier ${escapeHTML(fund.name)}">Modifier</button>` : ""}
     </article>`).join("");
@@ -563,7 +613,7 @@ function renderPaymentOptions() {
   document.querySelector("#payment-contribution").value = writableContributions.some((item) => item.id === previousFund) ? previousFund : writableContributions[0]?.id || "";
   document.querySelector("#quick-fund-grid").innerHTML = writableContributions.map((item) => `
     <button class="${document.querySelector("#payment-contribution").value === item.id ? "active" : ""}" type="button" data-quick-fund="${item.id}">
-      <span class="contribution-icon ${item.id === "family" ? "green" : "indigo"}">${iconSVG(item.icon)}</span><strong>${escapeHTML(item.name)}</strong><small>${formatMoney(item.monthlyAmount)} € / mois</small>
+      <span class="contribution-icon ${item.id === "family" ? "green" : item.id === "death" ? "indigo" : "orange"}">${iconSVG(item.icon)}</span><strong>${escapeHTML(item.name)}</strong><small>${formatMoney(item.monthlyAmount)} € / mois</small>
     </button>`).join("");
   updateQuickPaymentSummary();
 }
@@ -576,7 +626,7 @@ function renderExpenseOptions() {
   select.value = writableContributions.some((item) => item.id === previousFund) ? previousFund : writableContributions[0]?.id || "";
   document.querySelector("#expense-fund-grid").innerHTML = writableContributions.map((item) => `
     <button class="${select.value === item.id ? "active" : ""}" type="button" data-expense-fund="${item.id}">
-      <span class="contribution-icon ${item.id === "family" ? "green" : "indigo"}">${iconSVG(item.icon)}</span><strong>${escapeHTML(item.name)}</strong><small>Solde ${formatMoney(fundBalance(item.id))} €</small>
+      <span class="contribution-icon ${item.id === "family" ? "green" : item.id === "death" ? "indigo" : "orange"}">${iconSVG(item.icon)}</span><strong>${escapeHTML(item.name)}</strong><small>Solde ${formatMoney(fundBalance(item.id))} €</small>
     </button>`).join("");
   updateExpenseBalancePreview();
 }
@@ -704,7 +754,7 @@ function updatePaymentAllocationPreview() {
   const allocation = paymentAllocationFor(memberId, fund.id, amount);
 
   if (!allocation.outstanding) {
-    preview.innerHTML = "<span>Affectation automatique</span><strong>Ce membre est à jour</strong><small>Définissez une période plus longue si de nouvelles mensualités doivent être dues.</small>";
+    preview.innerHTML = "<span>Affectation automatique</span><strong>Ce membre est déjà à jour</strong><small>Aucun arriéré n’est dû dans cette caisse jusqu’au mois courant.</small>";
     return allocation;
   }
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -738,9 +788,21 @@ function updateQuickPaymentSummary({ clearAmount = false } = {}) {
   const situation = memberId && fund ? fundSituation(memberId, fund.id) : null;
   if (clearAmount) document.querySelector("#payment-amount").value = "";
   summary.innerHTML = situation
-    ? `<span>Reste à payer</span><strong>${formatMoney(situation.outstanding)} €</strong><small>${situation.missingMonths} mensualité${situation.missingMonths === 1 ? "" : "s"} manquante${situation.missingMonths === 1 ? "" : "s"} • ${formatMoney(Number(fund.monthly_amount))} € / mois</small>`
-    : '<span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small>';
+    ? `<span>Arriérés de cette caisse</span><strong>${formatMoney(situation.outstanding)} €</strong><small>${situation.missingMonths} mensualité${situation.missingMonths === 1 ? "" : "s"} à régulariser • ${formatMoney(Number(fund.monthly_amount))} € / mois</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" ${situation.outstanding > 0 ? "" : "disabled"}>${situation.outstanding > 0 ? `À jour • ${formatMoney(situation.outstanding)} €` : "Déjà à jour"}</button>`
+    : '<span>Arriérés de cette caisse</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" disabled>À jour</button>';
   updatePaymentAllocationPreview();
+}
+
+function settlePaymentArrears() {
+  const memberId = document.querySelector("#payment-member")?.value;
+  const code = document.querySelector("#payment-contribution")?.value;
+  const fund = workspace?.funds?.find((item) => item.code === code);
+  if (!memberId || !fund) return showToast("Choisissez d’abord un membre et une caisse.");
+  const situation = fundSituation(memberId, fund.id);
+  if (situation.outstanding <= 0) return showToast("Ce membre est déjà à jour pour cette caisse.");
+  document.querySelector("#payment-amount").value = situation.outstanding.toFixed(2);
+  updatePaymentAllocationPreview();
+  showToast(`Montant global des arriérés : ${formatMoney(situation.outstanding)} €.`);
 }
 
 function renderIdentity() {
@@ -764,7 +826,7 @@ function renderIdentity() {
   document.querySelector("#fund-config-shortcut").classList.toggle("hidden", !isAdministrator());
   const allowedCodes = writableFundCodes();
   document.querySelectorAll("[data-admin-fund]").forEach((button) => button.classList.toggle("hidden", !allowedCodes.includes(button.dataset.adminFund)));
-  if (!allowedCodes.includes(adminFundView)) adminFundView = allowedCodes[0] || "family";
+  if (!allowedCodes.includes(adminFundView)) adminFundView = allowedCodes[0] || state.contributions[0]?.id || "family";
   document.querySelector("#admin-pill-label").textContent = canRecordCash() ? "Gestion" : member?.approval_status === "pending" ? "En attente" : connected ? "Accès" : "Connexion";
   document.querySelector("#admin-role-label").textContent = member ? `${accessLabel(member)} • ${member.full_name}` : "Personne habilitée";
   document.querySelector("#cash-balance-label").textContent = canRecordCash() ? "Solde disponible" : "Mes versements enregistrés";
@@ -809,18 +871,25 @@ function renderSummaries() {
 
   document.querySelector("#balance-total").textContent = formatMoney(outstanding);
   document.querySelector("#welcome-status-text").textContent = late ? `${formatMoney(late)} € en retard` : "Aucune échéance en retard";
-  document.querySelector("#progress-label").textContent = `${paidFunds}/2`;
-  document.querySelector(".month-progress").setAttribute("aria-label", `${paidFunds} caisse sur 2 avec un versement enregistré`);
-  document.querySelector(".month-progress .progress-value").style.strokeDasharray = `${Math.round((paidFunds / 2) * 145)} 145`;
+  const fundCount = Math.max(1, state.contributions.length);
+  document.querySelector("#progress-label").textContent = `${paidFunds}/${state.contributions.length}`;
+  document.querySelector(".month-progress").setAttribute("aria-label", `${paidFunds} caisse sur ${state.contributions.length} avec un versement enregistré`);
+  document.querySelector(".month-progress .progress-value").style.strokeDasharray = `${Math.round((paidFunds / fundCount) * 145)} 145`;
   document.querySelector("#paid-summary").textContent = `${formatMoney(selected.paid)} €`;
   document.querySelector("#late-summary").textContent = `${formatMoney(selectedLate)} €`;
   document.querySelector("#upcoming-summary").textContent = `${formatMoney(selectedRemaining - selectedLate)} €`;
   document.querySelector("#admin-cash-total").textContent = `${formatMoney(cashBalance)} €`;
   document.querySelector("#admin-payment-count").textContent = writablePaymentCount;
   document.querySelector("#admin-payment-count").nextElementSibling.textContent = writablePaymentCount ? `${writablePaymentCount} opération${writablePaymentCount > 1 ? "s" : ""}` : "Historique vide";
+  document.querySelector("#admin-fund-count").textContent = String(state.contributions.length);
+  document.querySelector("#admin-fund-count-icon").textContent = String(state.contributions.length);
+  document.querySelector("#admin-fund-count-detail").textContent = state.contributions.length
+    ? state.contributions.map((item) => item.name).join(", ")
+    : "Aucune caisse active";
 }
 
 function renderAll() {
+  renderFundSelectors();
   renderHomeContributions();
   renderDetailedContributions();
   renderTransactions();
@@ -873,7 +942,7 @@ function summarySpeech() {
   const outstanding = outstandingTotal();
   const late = state.contributions.filter((item) => contributionStatus(item) === "late");
   const paid = personalCollected();
-  if (!outstanding && !paid) return "Vous n'avez aucune échéance enregistrée et aucun retard. Aucun paiement en espèces n'est encore enregistré dans la caisse famille ou la caisse décès.";
+  if (!outstanding && !paid) return "Vous n'avez aucune échéance enregistrée et aucun retard. Aucun paiement en espèces n'est encore enregistré dans vos caisses.";
   let text = `Vous avez versé ${formatMoney(paid)} euros au total. Il vous reste ${formatMoney(outstanding)} euros à payer.`;
   text += late.length ? ` Vous avez ${late.length} cotisation en retard.` : " Vous n'avez aucun retard.";
   return text;
@@ -889,8 +958,8 @@ function contributionsSpeech() {
 }
 
 function fundSpeech() {
-  if (canRecordCash()) return `Les deux caisses ont encaissé ${formatMoney(totalCollected())} euros, dépensé ${formatMoney(totalExpenses())} euros, et disposent de ${formatMoney(availableTotal())} euros.`;
-  return `Vos versements en espèces dans les deux caisses totalisent ${formatMoney(personalCollected())} euros.`;
+  if (canRecordCash()) return `Les caisses ont encaissé ${formatMoney(totalCollected())} euros, dépensé ${formatMoney(totalExpenses())} euros, et disposent de ${formatMoney(availableTotal())} euros.`;
+  return `Vos versements en espèces dans les caisses totalisent ${formatMoney(personalCollected())} euros.`;
 }
 
 function speak(text) {
@@ -957,7 +1026,7 @@ function setVoiceMessage(title, detail) {
 
 function executeVoiceCommand(command) {
   const text = command === "details" ? contributionsSpeech() : summarySpeech();
-  setVoiceMessage(command === "details" ? "Vos deux caisses" : "Votre résumé", text);
+  setVoiceMessage(command === "details" ? "Vos caisses" : "Votre résumé", text);
   speak(text);
 }
 
@@ -997,6 +1066,19 @@ function openFundConfig(code) {
   document.querySelector("#fund-config-day").value = fund.due_day;
   document.querySelector("#fund-config-start").value = String(fund.start_date).slice(0, 7);
   document.querySelector("#fund-config-title").textContent = `Configurer ${fund.name}`;
+  document.querySelector('#fund-config-form button[type="submit"]').textContent = "Enregistrer la configuration";
+  openSheet("fund-config-sheet");
+}
+
+function openCreateFund() {
+  if (!isAdministrator()) return showToast("Seul un administrateur peut ajouter une caisse.");
+  document.querySelector("#fund-config-form").reset();
+  document.querySelector("#fund-config-id").value = "";
+  document.querySelector("#fund-config-amount").value = "5.00";
+  document.querySelector("#fund-config-day").value = "10";
+  document.querySelector("#fund-config-start").value = currentMonthValue();
+  document.querySelector("#fund-config-title").textContent = "Ajouter une caisse";
+  document.querySelector('#fund-config-form button[type="submit"]').textContent = "Créer la caisse";
   openSheet("fund-config-sheet");
 }
 
@@ -1004,25 +1086,27 @@ async function submitFundConfiguration(event) {
   event.preventDefault();
   if (workspace?.membership?.role !== "admin") return showToast("Autorisation administrateur requise.");
   const submit = event.target.querySelector('button[type="submit"]');
+  const fundId = document.querySelector("#fund-config-id").value;
   submit.disabled = true;
-  submit.textContent = "Mise à jour des mensualités…";
+  submit.textContent = fundId ? "Mise à jour des mensualités…" : "Création de la caisse…";
   try {
-    await window.JappoBackend.configureFund({
-      p_fund_id: document.querySelector("#fund-config-id").value,
+    const configuration = {
       p_name: document.querySelector("#fund-config-name").value.trim(),
       p_description: document.querySelector("#fund-config-description").value.trim(),
       p_monthly_amount: Number(document.querySelector("#fund-config-amount").value),
       p_start_date: `${document.querySelector("#fund-config-start").value}-01`,
       p_due_day: Number(document.querySelector("#fund-config-day").value)
-    });
+    };
+    if (fundId) await window.JappoBackend.configureFund({ p_fund_id: fundId, ...configuration });
+    else await window.JappoBackend.createFund(configuration);
     await syncFromBackend({ quiet: true });
     closeSheets();
-    showToast("Configuration enregistrée et mensualités recalculées.");
+    showToast(fundId ? "Configuration enregistrée et mensualités recalculées." : "Nouvelle caisse créée et mensualités générées.");
   } catch (error) {
-    showToast(error.message || "La caisse n’a pas pu être modifiée.");
+    showToast(error.message || "La caisse n’a pas pu être enregistrée.");
   } finally {
     submit.disabled = false;
-    submit.textContent = "Enregistrer la configuration";
+    submit.textContent = fundId ? "Enregistrer la configuration" : "Créer la caisse";
   }
 }
 
@@ -1045,7 +1129,9 @@ async function reviewMemberAccess(memberId, decision, level, writeFunds, trigger
     } else if (reviewResult?.access_code) {
       showMemberCode(member.full_name, reviewResult.access_code);
     } else {
-      const scope = writeFunds.length === 2 ? "les deux caisses" : writeFunds[0] === "family" ? "la caisse famille" : "la caisse décès";
+      const scope = writeFunds.length === workspace.funds.length
+        ? "toutes les caisses"
+        : writeFunds.map((code) => workspace.funds.find((fund) => fund.code === code)?.name || code).join(", ");
       showToast(`${member.full_name} : ${level === "write" ? `saisie autorisée sur ${scope}` : "lecture seule autorisée"}.`);
     }
   } catch (error) {
@@ -1220,7 +1306,7 @@ async function recordCashPayment(event) {
   const note = document.querySelector("#payment-note").value.trim();
   if (!contribution?.backendId || !canWriteFund(contributionId) || !memberId || !Number.isFinite(amount) || amount <= 0 || !dateValue) return showToast("Vérifiez vos droits et les informations du paiement.");
   const allocation = paymentAllocationFor(memberId, contribution.backendId, amount);
-  if (!allocation.outstanding) return showToast("Définissez d’abord les mensualités dues pour ce membre et cette caisse.");
+  if (!allocation.outstanding) return showToast("Ce membre est déjà à jour pour cette caisse.");
   if (allocation.overpayment > 0.001) return showToast(`Le montant maximum accepté est ${formatMoney(allocation.outstanding)} €.`);
 
   const submit = event.target.querySelector('button[type="submit"]');
@@ -1619,6 +1705,8 @@ function handleAction(action) {
   if (action === "toggle-push") return togglePushNotifications();
   if (action === "record-cash") return openQuickPayment();
   if (action === "record-expense") return openExpense();
+  if (action === "settle-arrears") return settlePaymentArrears();
+  if (action === "create-fund") return openCreateFund();
   if (action === "send-login-link") return sendLoginLink();
   if (action === "copy-member-code") return copyMemberCode();
   if (action === "auth-or-signout") return authOrSignOut();
