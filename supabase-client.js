@@ -315,6 +315,13 @@
     return callRpc("set_member_fund_schedule", schedule);
   }
 
+  async function deleteFamilyMember(memberId, confirmation) {
+    return callRpc("delete_family_member", {
+      p_member_id: memberId,
+      p_confirmation: confirmation
+    });
+  }
+
   global.JappoBackend = Object.freeze({
     configured,
     initializeSession,
@@ -331,6 +338,7 @@
     configureFund,
     reviewMemberAccess,
     resetMemberLoginCode,
-    setMemberFundSchedule
+    setMemberFundSchedule,
+    deleteFamilyMember
   });
 })(window);

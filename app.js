@@ -441,7 +441,7 @@ function renderMemberAccess() {
         ${pending ? `<button class="reject-access" type="button" data-reject-member="${member.id}">Refuser</button>` : ""}`;
     return `<article class="access-member-card ${pending ? "pending" : rejected ? "rejected" : "approved"}">
       <div class="access-member-head"><span class="member-avatar">${initials(member.full_name)}</span><div><strong>${escapeHTML(identity)}</strong><small>${escapeHTML(status)}</small></div><em>${pending ? "Nouveau" : rejected ? "Refusé" : "Validé"}</em></div>
-      <div class="access-member-controls">${controls}</div>
+      <div class="access-member-controls">${controls}${protectedAdmin ? "" : `<button class="delete-member-button" type="button" data-delete-member="${member.id}">Supprimer le membre et ses transactions</button>`}</div>
     </article>`;
   }).join("");
 }
@@ -497,7 +497,7 @@ function updateSchedulePreview() {
   const fund = workspace?.funds?.find((item) => item.id === fundId);
   const preview = document.querySelector("#schedule-preview");
   if (!preview) return;
-  if (!member || !fund || !start || !end || start > end) {
+  if (!member || !fund || !start || !end || start < "2021-01" || start > end || end > currentMonthValue()) {
     preview.innerHTML = "<span>Période</span><strong>Sélectionnez une période valide</strong><small>Du mois de début au mois de fin inclus.</small>";
     return;
   }
@@ -515,6 +515,8 @@ function hydrateScheduleForm() {
   if (!member || !fund) return updateSchedulePreview();
   const existing = scheduleFor(memberId, fundId);
   const defaultStart = ["2021-01", String(fund.start_date || "2021-01").slice(0, 7), String(member.joined_on || "2021-01").slice(0, 7)].sort().at(-1);
+  document.querySelector("#schedule-start").max = currentMonthValue();
+  document.querySelector("#schedule-end").max = currentMonthValue();
   document.querySelector("#schedule-start").value = existing ? String(existing.start_month).slice(0, 7) : defaultStart;
   document.querySelector("#schedule-end").value = existing ? String(existing.end_month).slice(0, 7) : currentMonthValue();
   updateSchedulePreview();
@@ -537,7 +539,85 @@ function renderScheduleOptions() {
   hydrateScheduleForm();
 }
 
-function updateQuickPaymentSummary() {
+function paymentAllocationFor(memberId, fundId, amount) {
+  const unpaidPeriods = periodsFor(memberId, fundId)
+    .filter((period) => Number(period.amount_paid || 0) < Number(period.amount_due || 0))
+    .sort((a, b) => String(a.period_start).localeCompare(String(b.period_start)));
+  const outstanding = unpaidPeriods.reduce((sum, period) => sum + Math.max(0, Number(period.amount_due || 0) - Number(period.amount_paid || 0)), 0);
+  let remaining = Math.max(0, Number(amount) || 0);
+  const touched = [];
+  let settledMonths = 0;
+
+  unpaidPeriods.forEach((period) => {
+    if (remaining <= 0) return;
+    const periodRemaining = Math.max(0, Number(period.amount_due || 0) - Number(period.amount_paid || 0));
+    const applied = Math.min(remaining, periodRemaining);
+    if (applied <= 0) return;
+    const complete = applied >= periodRemaining - 0.001;
+    touched.push({ period, applied, complete });
+    if (complete) settledMonths += 1;
+    remaining -= applied;
+  });
+
+  return {
+    outstanding,
+    settledMonths,
+    touched,
+    partialMonth: touched.some((item) => !item.complete),
+    overpayment: Math.max(0, Number(amount || 0) - outstanding),
+    remainingAfter: Math.max(0, outstanding - Number(amount || 0))
+  };
+}
+
+function updatePaymentAllocationPreview({ syncChips = false } = {}) {
+  const memberId = document.querySelector("#payment-member")?.value;
+  const code = document.querySelector("#payment-contribution")?.value;
+  const fund = workspace?.funds?.find((item) => item.code === code);
+  const amount = Number(document.querySelector("#payment-amount")?.value);
+  const preview = document.querySelector("#payment-allocation-preview");
+  if (!preview) return null;
+
+  preview.classList.remove("error");
+  if (!memberId || !fund) {
+    preview.innerHTML = "<span>Affectation automatique</span><strong>Sélectionnez un membre et une caisse</strong><small>Les arriérés seront régularisés du mois le plus ancien au plus récent.</small>";
+    return null;
+  }
+
+  const allocation = paymentAllocationFor(memberId, fund.id, amount);
+  if (syncChips) {
+    const suggestions = { "1": Number(fund.monthly_amount), "3": Number(fund.monthly_amount) * 3, "6": Number(fund.monthly_amount) * 6, all: allocation.outstanding };
+    document.querySelectorAll("[data-month-count]").forEach((button) => {
+      button.classList.toggle("active", Number.isFinite(amount) && Math.abs(amount - suggestions[button.dataset.monthCount]) < 0.001);
+    });
+  }
+
+  if (!allocation.outstanding) {
+    preview.innerHTML = "<span>Affectation automatique</span><strong>Ce membre est à jour</strong><small>Définissez une période plus longue si de nouvelles mensualités doivent être dues.</small>";
+    return allocation;
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    preview.innerHTML = `<span>Affectation automatique</span><strong>Saisissez un montant</strong><small>${allocation.touched.length ? "" : "Les arriérés seront régularisés du mois le plus ancien au plus récent."}</small>`;
+    return allocation;
+  }
+  if (allocation.overpayment > 0.001) {
+    preview.classList.add("error");
+    preview.innerHTML = `<span>Montant à corriger</span><strong>${formatMoney(allocation.overpayment)} € dépassent le reste dû</strong><small>Montant maximum accepté : ${formatMoney(allocation.outstanding)} €.</small>`;
+    return allocation;
+  }
+
+  const first = allocation.touched[0]?.period;
+  const last = allocation.touched.at(-1)?.period;
+  const settledLabel = allocation.settledMonths
+    ? `${allocation.settledMonths} mensualité${allocation.settledMonths > 1 ? "s" : ""} régularisée${allocation.settledMonths > 1 ? "s" : ""}${allocation.partialMonth ? " + 1 mois partiel" : ""}`
+    : `Paiement partiel sur ${formatPeriod(first?.period_start)}`;
+  const range = first && last
+    ? first.id === last.id ? formatPeriod(first.period_start) : `${formatPeriod(first.period_start)} → ${formatPeriod(last.period_start)}`
+    : "Aucune échéance couverte";
+  preview.innerHTML = `<span>Affectation automatique • arriérés d’abord</span><strong>${settledLabel}</strong><small>${range} • reste après paiement : ${formatMoney(allocation.remainingAfter)} €</small>`;
+  return allocation;
+}
+
+function updateQuickPaymentSummary({ setSuggestedAmount = true } = {}) {
   const memberId = document.querySelector("#payment-member")?.value;
   const code = document.querySelector("#payment-contribution")?.value;
   const fund = workspace?.funds?.find((item) => item.code === code);
@@ -545,10 +625,11 @@ function updateQuickPaymentSummary() {
   if (!summary) return;
   const situation = memberId && fund ? fundSituation(memberId, fund.id) : null;
   const amount = situation ? Math.min(situation.outstanding, Number(fund.monthly_amount) * paymentMonthCount) : 0;
-  document.querySelector("#payment-amount").value = amount > 0 ? amount.toFixed(2) : "";
+  if (setSuggestedAmount) document.querySelector("#payment-amount").value = amount > 0 ? amount.toFixed(2) : "";
   summary.innerHTML = situation
     ? `<span>Reste à payer</span><strong>${formatMoney(situation.outstanding)} €</strong><small>${situation.missingMonths} mensualité${situation.missingMonths === 1 ? "" : "s"} manquante${situation.missingMonths === 1 ? "" : "s"} • ${formatMoney(Number(fund.monthly_amount))} € / mois</small>`
     : '<span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small>';
+  updatePaymentAllocationPreview();
 }
 
 function renderIdentity() {
@@ -874,6 +955,44 @@ async function resetMemberLoginCode(memberId, trigger) {
   }
 }
 
+function openDeleteMember(memberId) {
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
+  const member = workspace?.members?.find((item) => item.id === memberId);
+  if (!member || member.role === "admin") return showToast("Ce membre ne peut pas être supprimé.");
+  document.querySelector("#delete-member-id").value = member.id;
+  document.querySelector("#delete-member-confirmation").value = "";
+  document.querySelector("#delete-member-message").textContent = `La fiche de ${member.full_name}, ses mensualités et tous les paiements qui lui sont attribués seront supprimés définitivement.`;
+  document.querySelector("#delete-member-label").textContent = `Saisissez exactement « ${member.full_name} » pour confirmer`;
+  openSheet("delete-member-modal");
+  document.querySelector("#delete-member-confirmation").focus({ preventScroll: true });
+}
+
+async function deleteFamilyMember(event) {
+  event.preventDefault();
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
+  const memberId = document.querySelector("#delete-member-id").value;
+  const confirmation = document.querySelector("#delete-member-confirmation").value.trim();
+  const member = workspace?.members?.find((item) => item.id === memberId);
+  if (!member || confirmation.toLocaleLowerCase("fr") !== member.full_name.trim().toLocaleLowerCase("fr")) {
+    return showToast("Le nom saisi ne correspond pas exactement au membre.");
+  }
+
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = "Suppression…";
+  try {
+    const result = await window.JappoBackend.deleteFamilyMember(memberId, confirmation);
+    await syncFromBackend({ quiet: true });
+    closeSheets();
+    showToast(`${result?.member_name || member.full_name} et ses transactions ont été supprimés.`);
+  } catch (error) {
+    showToast(error.message || "Le membre n’a pas pu être supprimé.");
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Supprimer définitivement";
+  }
+}
+
 async function copyMemberCode() {
   const code = document.querySelector("#member-access-code").textContent.trim();
   try {
@@ -892,7 +1011,7 @@ async function submitMemberSchedule(event) {
   const start = document.querySelector("#schedule-start").value;
   const end = document.querySelector("#schedule-end").value;
   const fund = workspace?.funds?.find((item) => item.id === fundId);
-  if (!memberId || !fund || !canWriteFund(fund.code) || !start || !end || start > end) return showToast("Vérifiez le membre, la caisse et les mois.");
+  if (!memberId || !fund || !canWriteFund(fund.code) || !start || !end || start < "2021-01" || start > end || end > currentMonthValue()) return showToast("Choisissez une période comprise entre janvier 2021 et le mois courant.");
   const submit = event.target.querySelector('button[type="submit"]');
   submit.disabled = true;
   submit.textContent = "Calcul des mensualités…";
@@ -945,6 +1064,9 @@ async function recordCashPayment(event) {
   const dateValue = document.querySelector("#payment-date").value;
   const note = document.querySelector("#payment-note").value.trim();
   if (!contribution?.backendId || !canWriteFund(contributionId) || !memberId || !Number.isFinite(amount) || amount <= 0 || !dateValue) return showToast("Vérifiez vos droits et les informations du paiement.");
+  const allocation = paymentAllocationFor(memberId, contribution.backendId, amount);
+  if (!allocation.outstanding) return showToast("Définissez d’abord les mensualités dues pour ce membre et cette caisse.");
+  if (allocation.overpayment > 0.001) return showToast(`Le montant maximum accepté est ${formatMoney(allocation.outstanding)} €.`);
 
   const submit = event.target.querySelector('button[type="submit"]');
   submit.disabled = true;
@@ -964,7 +1086,10 @@ async function recordCashPayment(event) {
     renderPaymentOptions();
     setDefaultPaymentDates();
     closeSheets();
-    document.querySelector("#confirm-message").textContent = `Le paiement de ${formatMoney(amount)} € a été accepté par Supabase et ajouté à l’historique.`;
+    const allocationLabel = allocation.settledMonths
+      ? `${allocation.settledMonths} mensualité${allocation.settledMonths > 1 ? "s" : ""} régularisée${allocation.settledMonths > 1 ? "s" : ""}${allocation.partialMonth ? " et la suivante partiellement réglée" : ""}`
+      : "la mensualité la plus ancienne partiellement réglée";
+    document.querySelector("#confirm-message").textContent = `Le paiement de ${formatMoney(amount)} € a été enregistré : ${allocationLabel}, arriérés en priorité.`;
     openSheet("confirm-modal");
     speak(`Le paiement en espèces de ${formatMoney(amount)} euros pour ${contribution.name} est enregistré.`);
   } catch (error) {
@@ -1251,6 +1376,8 @@ function setupEvents() {
     );
     const resetCodeButton = event.target.closest("[data-reset-member-code]");
     if (resetCodeButton) return resetMemberLoginCode(resetCodeButton.dataset.resetMemberCode, resetCodeButton);
+    const deleteMemberButton = event.target.closest("[data-delete-member]");
+    if (deleteMemberButton) return openDeleteMember(deleteMemberButton.dataset.deleteMember);
     const actionButton = event.target.closest("[data-action]");
     if (actionButton) return handleAction(actionButton.dataset.action);
     const voiceButton = event.target.closest("[data-voice-command]");
@@ -1263,6 +1390,7 @@ function setupEvents() {
   });
   document.querySelector("#modal-backdrop").addEventListener("click", closeSheets);
   document.querySelector("#payment-form").addEventListener("submit", recordCashPayment);
+  document.querySelector("#delete-member-form").addEventListener("submit", deleteFamilyMember);
   document.querySelector("#fund-config-form").addEventListener("submit", submitFundConfiguration);
   document.querySelector("#member-schedule-form").addEventListener("submit", submitMemberSchedule);
   document.querySelector("#admin-password-form").addEventListener("submit", submitAdminPassword);
@@ -1271,6 +1399,7 @@ function setupEvents() {
   document.querySelector("#membership-request-form").addEventListener("submit", submitMembershipRequest);
   document.querySelector("#payment-member").addEventListener("change", updateQuickPaymentSummary);
   document.querySelector("#payment-contribution").addEventListener("change", updateQuickPaymentSummary);
+  document.querySelector("#payment-amount").addEventListener("input", () => updatePaymentAllocationPreview({ syncChips: true }));
   document.querySelector("#schedule-member").addEventListener("change", hydrateScheduleForm);
   document.querySelector("#schedule-fund").addEventListener("change", hydrateScheduleForm);
   document.querySelector("#schedule-start").addEventListener("change", updateSchedulePreview);

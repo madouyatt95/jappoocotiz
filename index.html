@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=9" />
+    <link rel="stylesheet" href="./styles.css?v=10" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -267,6 +267,7 @@
         <div class="quick-payment-summary" id="quick-payment-summary"><span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small></div>
         <div class="form-field"><span>3. Nombre de mensualités</span><div class="month-chips" role="group" aria-label="Nombre de mensualités"><button class="active" type="button" data-month-count="1">1 mois</button><button type="button" data-month-count="3">3 mois</button><button type="button" data-month-count="6">6 mois</button><button type="button" data-month-count="all">Tout</button></div></div>
         <div class="form-grid"><label class="form-field"><span>Montant reçu</span><div class="money-input"><input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /><b>€</b></div></label><label class="form-field"><span>Date</span><input id="payment-date" type="date" required /></label></div>
+        <div class="payment-allocation-preview" id="payment-allocation-preview" role="status" aria-live="polite"><span>Affectation automatique</span><strong>Saisissez un montant</strong><small>Les arriérés seront régularisés du mois le plus ancien au plus récent.</small></div>
         <details class="payment-details"><summary>Ajouter une note</summary><label class="form-field"><span>Note facultative</span><input id="payment-note" type="text" maxlength="160" placeholder="Ex. reçu remis au membre" /></label><label class="form-field"><span>Moyen de paiement</span><input id="payment-method" type="text" value="Espèces" readonly /></label></details>
         <button class="primary-btn full" type="submit">Valider l’encaissement</button>
       </form>
@@ -357,9 +358,21 @@
       <button class="link-login-button" type="button" data-action="close-sheets">Fermer</button>
     </section>
 
+    <section class="center-modal delete-member-modal hidden" id="delete-member-modal" role="dialog" aria-modal="true" aria-labelledby="delete-member-title">
+      <span class="confirmation-icon danger-confirmation">!</span>
+      <h2 id="delete-member-title">Supprimer ce membre ?</h2>
+      <p id="delete-member-message">Cette action supprimera sa fiche, ses mensualités et tous les paiements qui lui sont attribués.</p>
+      <form id="delete-member-form">
+        <input id="delete-member-id" type="hidden" />
+        <label class="form-field delete-confirm-field"><span id="delete-member-label">Saisissez le nom du membre pour confirmer</span><input id="delete-member-confirmation" type="text" autocomplete="off" required /></label>
+        <button class="danger-btn full" type="submit">Supprimer définitivement</button>
+        <button class="link-login-button" type="button" data-action="close-sheets">Annuler</button>
+      </form>
+    </section>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
-    <script src="./supabase-client.js?v=7"></script>
-    <script src="./app.js?v=10" defer></script>
+    <script src="./supabase-client.js?v=8"></script>
+    <script src="./app.js?v=11" defer></script>
   </body>
 </html>

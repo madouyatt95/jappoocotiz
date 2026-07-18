@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const files = ["index.html", "styles.css", "app.js", "supabase-client.js", "sw.js", "manifest.webmanifest", "assets/icon.svg", "vercel.json", "scripts/build.mjs", "config.js", "supabase/migrations/202607180001_initial_schema.sql", "supabase/migrations/202607180002_member_approval_and_activity.sql", "supabase/migrations/202607180003_member_fund_schedules.sql", "supabase/migrations/202607180004_pseudo_member_login.sql"];
+const files = ["index.html", "styles.css", "app.js", "supabase-client.js", "sw.js", "manifest.webmanifest", "assets/icon.svg", "vercel.json", "scripts/build.mjs", "config.js", "supabase/migrations/202607180001_initial_schema.sql", "supabase/migrations/202607180002_member_approval_and_activity.sql", "supabase/migrations/202607180003_member_fund_schedules.sql", "supabase/migrations/202607180004_pseudo_member_login.sql", "supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"];
 const contents = Object.fromEntries(await Promise.all(files.map(async (file) => [file, await readFile(join(root, file), "utf8")])));
 
 const checks = [
@@ -12,7 +12,7 @@ const checks = [
   ["orientation mobile", contents["manifest.webmanifest"].includes('"orientation": "portrait-primary"')],
   ["viewport et safe-area", contents["index.html"].includes("viewport-fit=cover") && contents["styles.css"].includes("env(safe-area-inset-bottom)")],
   ["mode plein écran", contents["styles.css"].includes("100dvh")],
-  ["service worker v10", contents["app.js"].includes("serviceWorker.register") && contents["sw.js"].includes("jappo-cotiz-v10")],
+  ["service worker v11", contents["app.js"].includes("serviceWorker.register") && contents["sw.js"].includes("jappo-cotiz-v11")],
   ["cache de lecture sans démo", contents["app.js"].includes("jappo-cotiz-read-cache-v3") && contents["app.js"].includes("payments: []") && contents["app.js"].includes("activities: []")],
   ["deux caisses uniquement", contents["app.js"].includes('ALLOWED_CONTRIBUTIONS = ["family", "death"]') && !contents["app.js"].includes("Projet maison") && !contents["app.js"].includes("Fête familiale")],
   ["aucune identité fictive", !contents["index.html"].includes("Mahamadou") && !contents["app.js"].includes("Aminata") && !contents["app.js"].includes("Ousmane")],
@@ -26,7 +26,7 @@ const checks = [
 
 checks.push(["build statique Vercel", contents["vercel.json"].includes('"outputDirectory": "dist"') && contents["scripts/build.mjs"].includes("Build statique")]);
 checks.push(["configuration Supabase publique séparée", contents["index.html"].includes("config.js?v=1") && !contents["config.js"].includes("supabase.co")]);
-checks.push(["client Supabase authentifié", contents["index.html"].includes("supabase-client.js?v=7") && contents["supabase-client.js"].includes("Authorization: `Bearer") && contents["app.js"].includes("syncFromBackend")]);
+checks.push(["client Supabase authentifié", contents["index.html"].includes("supabase-client.js?v=8") && contents["supabase-client.js"].includes("Authorization: `Bearer") && contents["app.js"].includes("syncFromBackend")]);
 checks.push(["connexion admin par mot de passe", contents["index.html"].includes('id="auth-password"') && contents["supabase-client.js"].includes('grant_type=password') && contents["app.js"].includes("signInWithPassword(email, password)")]);
 checks.push(["création du mot de passe admin", contents["index.html"].includes('id="admin-password-form"') && contents["supabase-client.js"].includes("updatePassword") && contents["app.js"].includes("submitAdminPassword")]);
 checks.push(["lien de connexion de secours", contents["index.html"].includes('data-action="send-login-link"') && contents["app.js"].includes("sendLoginLink") && contents["supabase-client.js"].includes("sendMagicLink")]);
@@ -54,6 +54,10 @@ checks.push(["code stocké sous forme chiffrée", contents["supabase/migrations/
 checks.push(["protection contre les essais de code", contents["supabase/migrations/202607180004_pseudo_member_login.sql"].includes("failed_login_attempts") && contents["supabase/migrations/202607180004_pseudo_member_login.sql"].includes("interval '15 minutes'")]);
 checks.push(["session anonyme revendiquée après code", contents["supabase/migrations/202607180004_pseudo_member_login.sql"].includes("claim_member_login") && contents["supabase-client.js"].includes("signInAnonymously")]);
 checks.push(["admin remet ou réinitialise le code", contents["index.html"].includes('id="member-code-modal"') && contents["app.js"].includes("resetMemberLoginCode") && contents["supabase-client.js"].includes("resetMemberLoginCode")]);
+checks.push(["montant ventilé sur les arriérés", contents["index.html"].includes('id="payment-allocation-preview"') && contents["app.js"].includes("paymentAllocationFor") && contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("order by period_start")]);
+checks.push(["statuts paiement cohérents", contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("'partial', 'paid'") && contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("contribution_periods_status_check")]);
+checks.push(["périodes admises depuis janvier 2021", contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("normalized_start < date '2021-01-01'") && !contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("normalized_start < greatest" )]);
+checks.push(["suppression administrateur protégée", contents["index.html"].includes('id="delete-member-form"') && contents["supabase-client.js"].includes("deleteFamilyMember") && contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("delete_family_member") && contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("target.user_id = auth.uid()")]);
 
 for (const file of ["app.js", "supabase-client.js", "sw.js", "server.mjs", "scripts/build.mjs", "scripts/check.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", join(root, file)], { encoding: "utf8" });
