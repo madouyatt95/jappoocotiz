@@ -5,11 +5,12 @@
   "type": "module",
   "description": "PWA mobile-first de gestion de cotisations familiales avec assistance vocale.",
   "scripts": {
+    "build": "node --env-file-if-exists=.env.local scripts/build.mjs",
     "start": "node server.mjs",
     "check": "node scripts/check.mjs",
     "test": "npm run check"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   }
 }

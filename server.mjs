@@ -3,7 +3,8 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL(".", import.meta.url));
+const sourceRoot = fileURLToPath(new URL(".", import.meta.url));
+const root = process.env.JAPPO_SERVE_DIST === "1" ? join(sourceRoot, "dist") : sourceRoot;
 const port = Number(process.env.JAPPO_PORT || 4173);
 const host = process.env.JAPPO_HOST || "127.0.0.1";
 const types = {

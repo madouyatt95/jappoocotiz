@@ -1,11 +1,12 @@
-const STORAGE_KEY = "jappo-cotiz-clean-v2";
+const STORAGE_KEY = "jappo-cotiz-read-cache-v3";
 const ALLOWED_CONTRIBUTIONS = ["family", "death"];
+const AUTHORIZED_ROLES = ["admin", "treasurer", "cash_collector"];
 
 const initialState = {
   settings: { slowSpeech: true },
   contributions: [
-    { id: "family", name: "Caisse famille", description: "Cotisation familiale", amount: 0, paid: 0, due: null, status: "unconfigured", icon: "family" },
-    { id: "death", name: "Caisse décès", description: "Fonds de solidarité", amount: 0, paid: 0, due: null, status: "unconfigured", icon: "shield" }
+    { id: "family", name: "Caisse famille", description: "Cotisation familiale mensuelle", monthlyAmount: 5, startDate: "2021-01-01", dueDay: 10, amount: 0, paid: 0, due: null, missingMonths: 0, status: "unconfigured", icon: "family" },
+    { id: "death", name: "Caisse décès", description: "Fonds de solidarité mensuel", monthlyAmount: 5, startDate: "2021-01-01", dueDay: 10, amount: 0, paid: 0, due: null, missingMonths: 0, status: "unconfigured", icon: "shield" }
   ],
   payments: [],
   activities: []
@@ -13,9 +14,16 @@ const initialState = {
 
 let state = loadState();
 let currentFilter = "all";
+let currentFundView = "family";
+let cashFundView = "family";
+let adminFundView = "family";
+let paymentMonthCount = 1;
 let deferredInstallPrompt = null;
 let recognition = null;
 let toastTimer = null;
+let workspace = null;
+let backendSession = null;
+let syncing = false;
 
 const statusConfig = {
   unconfigured: { label: "Aucune échéance", tone: "upcoming" },
@@ -36,7 +44,7 @@ function loadState() {
       const clean = cloneInitialState();
       clean.settings = { ...clean.settings, ...saved.settings };
       clean.payments = saved.payments.filter((payment) => payment.method === "Espèces" && ALLOWED_CONTRIBUTIONS.includes(payment.contributionId));
-      clean.activities = saved.activities;
+      clean.activities = saved.activities.filter((activity) => activity.source === "supabase");
       clean.contributions = clean.contributions.map((base) => {
         const stored = saved.contributions.find(({ id }) => id === base.id);
         return stored ? { ...base, paid: Number(stored.paid) || 0, amount: Number(stored.amount) || 0, due: stored.due || null, status: stored.status || base.status } : base;
@@ -50,11 +58,8 @@ function loadState() {
 }
 
 function saveState() {
+  // Cache de lecture uniquement : aucune écriture financière n'est validée localement.
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function uid(prefix) {
-  return `${prefix}-${globalThis.crypto?.randomUUID?.() || Date.now().toString(36)}`;
 }
 
 function escapeHTML(value) {
@@ -72,6 +77,13 @@ function formatMoney(value, decimals = 0) {
 
 function totalCollected() {
   return state.payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+}
+
+function personalCollected() {
+  if (!workspace?.membership) return 0;
+  return state.payments
+    .filter((payment) => payment.memberId === workspace.membership.id)
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 }
 
 function outstandingTotal() {
@@ -104,9 +116,111 @@ function contributionAmountLabel(item) {
 }
 
 function contributionDetail(item) {
-  if (item.amount > item.paid) return `Reste ${formatMoney(item.amount - item.paid)} € à payer`;
+  if (item.amount > item.paid) return `${item.missingMonths || 0} mensualité${item.missingMonths === 1 ? "" : "s"} manquante${item.missingMonths === 1 ? "" : "s"} • reste ${formatMoney(item.amount - item.paid)} €`;
   if (item.paid > 0) return `${formatMoney(item.paid)} € versés en espèces`;
   return "Aucune échéance enregistrée";
+}
+
+function canRecordCash() {
+  return Boolean(workspace?.membership && AUTHORIZED_ROLES.includes(workspace.membership.role));
+}
+
+function roleLabel(role) {
+  return ({ admin: "Administrateur", treasurer: "Trésorier", cash_collector: "Encaisseur", member: "Membre" })[role] || "Membre";
+}
+
+function initials(name) {
+  const parts = String(name || "Utilisateur").trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "UT";
+}
+
+function formatDate(value) {
+  if (!value) return "Date inconnue";
+  return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" }).format(new Date(`${value}T12:00:00`));
+}
+
+function formatPeriod(value) {
+  if (!value) return "Période inconnue";
+  return new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(new Date(`${value.slice(0, 7)}-01T12:00:00`));
+}
+
+function periodsFor(memberId, fundId) {
+  return (workspace?.periods || []).filter((period) => period.member_id === memberId && period.fund_id === fundId && !["exempt", "cancelled"].includes(period.status));
+}
+
+function fundSituation(memberId, fundId) {
+  const periods = periodsFor(memberId, fundId);
+  const amount = periods.reduce((sum, period) => sum + Number(period.amount_due || 0), 0);
+  const paid = periods.reduce((sum, period) => sum + Number(period.amount_paid || 0), 0);
+  const unpaid = periods.filter((period) => Number(period.amount_paid || 0) < Number(period.amount_due || 0));
+  const late = unpaid.filter((period) => period.due_date && period.due_date < new Date().toISOString().slice(0, 10));
+  return {
+    amount,
+    paid,
+    outstanding: Math.max(0, amount - paid),
+    missingMonths: unpaid.length,
+    lateMonths: late.length,
+    nextDue: unpaid.map((period) => period.due_date).filter(Boolean).sort()[0] || null
+  };
+}
+
+function applyWorkspace(nextWorkspace) {
+  workspace = nextWorkspace;
+  if (!workspace?.membership) {
+    state = cloneInitialState();
+    return;
+  }
+
+  const memberNames = new Map((workspace.members || []).map((member) => [member.id, member.full_name]));
+  memberNames.set(workspace.membership.id, workspace.membership.full_name);
+  const fundById = new Map(workspace.funds.map((fund) => [fund.id, fund]));
+
+  state.contributions = cloneInitialState().contributions.map((base) => {
+    const fund = workspace.funds.find((item) => item.code === base.id);
+    const situation = fund ? fundSituation(workspace.membership.id, fund.id) : { amount: 0, paid: 0, missingMonths: 0, lateMonths: 0, nextDue: null };
+    return {
+      ...base,
+      backendId: fund?.id || null,
+      name: fund?.name || base.name,
+      description: fund?.description || base.description,
+      monthlyAmount: Number(fund?.monthly_amount || base.monthlyAmount),
+      startDate: fund?.start_date || base.startDate,
+      dueDay: Number(fund?.due_day || base.dueDay),
+      amount: situation.amount,
+      paid: situation.paid,
+      due: situation.nextDue,
+      missingMonths: situation.missingMonths,
+      status: situation.lateMonths ? "late" : situation.amount ? "due" : situation.paid ? "paid" : "unconfigured"
+    };
+  });
+
+  state.payments = workspace.payments.map((payment) => {
+    const fund = fundById.get(payment.fund_id);
+    return {
+      id: payment.id,
+      memberId: payment.member_id,
+      member: memberNames.get(payment.member_id) || "Membre",
+      contributionId: fund?.code || "family",
+      contribution: fund?.name || "Caisse",
+      amount: Number(payment.amount || 0),
+      method: "Espèces",
+      date: payment.payment_date,
+      dateLabel: formatDate(payment.payment_date),
+      period: payment.period_start,
+      periodLabel: formatPeriod(payment.period_start),
+      note: payment.note || "",
+      recordedBy: payment.recorded_by === workspace.user.id ? workspace.membership.full_name : "Responsable habilité"
+    };
+  });
+  state.activities = state.payments.map((payment) => ({
+    id: `activity-${payment.id}`,
+    source: "supabase",
+    group: payment.date === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : payment.dateLabel,
+    title: "Paiement en espèces enregistré",
+    text: `${payment.member} • ${payment.contribution} • ${formatMoney(payment.amount)} €`,
+    time: `Enregistré par ${payment.recordedBy}`
+  }));
+  saveState();
 }
 
 function renderHomeContributions() {
@@ -123,7 +237,7 @@ function renderHomeContributions() {
 }
 
 function renderDetailedContributions() {
-  const filtered = state.contributions.filter((item) => currentFilter === "all" || contributionStatus(item) === currentFilter);
+  const filtered = state.contributions.filter((item) => item.id === currentFundView && (currentFilter === "all" || contributionStatus(item) === currentFilter));
   const container = document.querySelector("#detailed-contribution-list");
   if (!filtered.length) {
     container.innerHTML = '<div class="notice-card"><div><strong>Aucune cotisation dans cette catégorie</strong><p>Les échéances apparaîtront ici après leur configuration par un responsable.</p></div></div>';
@@ -133,27 +247,48 @@ function renderDetailedContributions() {
     const statusKey = contributionStatus(item);
     const status = statusConfig[statusKey];
     const progress = item.amount ? Math.min(100, (item.paid / item.amount) * 100) : 0;
-    const progressMarkup = statusKey === "partial" ? `<div class="partial-bar" aria-label="${Math.round(progress)} pour cent versé"><span style="width:${progress}%"></span></div>` : "";
+    const progressMarkup = `<div class="partial-bar" aria-label="${Math.round(progress)} pour cent versé"><span style="width:${progress}%"></span></div>`;
+    const fundPeriods = item.backendId && workspace?.membership ? periodsFor(workspace.membership.id, item.backendId).slice().sort((a, b) => b.period_start.localeCompare(a.period_start)).slice(0, 12) : [];
+    const monthHistory = fundPeriods.length ? `<div class="month-history">${fundPeriods.map((period) => {
+      const paid = Number(period.amount_paid || 0) >= Number(period.amount_due || 0);
+      const partial = Number(period.amount_paid || 0) > 0 && !paid;
+      return `<span class="${paid ? "paid" : partial ? "partial" : "late"}"><b>${formatPeriod(period.period_start).slice(0, 3)}</b><small>${String(period.period_start).slice(2, 4)}</small></span>`;
+    }).join("")}</div>` : '<p class="empty-periods">Aucune mensualité générée pour ce membre.</p>';
     return `
-      <article class="detail-card">
+      <article class="detail-card fund-detail-card">
         <div class="detail-card-main">
           <span class="contribution-icon ${status.tone}">${iconSVG(item.icon)}</span>
-          <div class="contribution-copy"><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.description)}</small>${progressMarkup}</div>
+          <div class="contribution-copy"><strong>${escapeHTML(item.name)}</strong><small>${formatMoney(item.monthlyAmount)} € par mois depuis ${formatPeriod(item.startDate)}</small>${progressMarkup}</div>
           <div class="contribution-amount"><strong>${contributionAmountLabel(item)}</strong><em class="status-badge ${status.tone}">${status.label}</em></div>
         </div>
-        <div class="detail-footer"><span>${escapeHTML(contributionDetail(item))}</span><span>Consultation</span></div>
+        <div class="fund-stat-grid"><div><small>Versé</small><strong>${formatMoney(item.paid)} €</strong></div><div><small>Reste</small><strong>${formatMoney(Math.max(0, item.amount - item.paid))} €</strong></div><div><small>Mois manquants</small><strong>${item.missingMonths || 0}</strong></div></div>
+        ${monthHistory}
+        <div class="detail-footer"><span>${escapeHTML(contributionDetail(item))}</span><span>Lecture seule</span></div>
       </article>`;
   }).join("");
 }
 
 function renderTransactions() {
   const container = document.querySelector("#transaction-list");
-  if (!state.payments.length) {
+  const payments = state.payments.filter((payment) => payment.contributionId === cashFundView);
+  if (!payments.length) {
     container.innerHTML = '<div class="empty-state"><span>₣</span><strong>Aucune opération</strong><p>Les paiements en espèces enregistrés apparaîtront ici.</p></div>';
     return;
   }
-  container.innerHTML = state.payments.slice(0, 8).map((payment) => `
+  container.innerHTML = payments.slice(0, 8).map((payment) => `
     <article class="transaction"><span class="transaction-icon in">↓</span><div><strong>${escapeHTML(payment.contribution)}</strong><small>${escapeHTML(payment.member)} • ${escapeHTML(payment.dateLabel)}</small></div><b class="money-in">+ ${formatMoney(payment.amount)} €</b></article>`).join("");
+}
+
+function renderFundAccount() {
+  const fund = state.contributions.find((item) => item.id === cashFundView) || state.contributions[0];
+  const fundPayments = state.payments.filter((payment) => payment.contributionId === fund.id);
+  const collected = fundPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  document.querySelector("#cash-balance").textContent = `${formatMoney(collected, 2)} €`;
+  document.querySelector("#cash-in").textContent = `+ ${formatMoney(collected)} €`;
+  document.querySelector("#cash-updated").textContent = fundPayments.length ? `${fundPayments.length} encaissement${fundPayments.length > 1 ? "s" : ""} en espèces` : "Aucune opération enregistrée";
+  document.querySelector("#fund-period-card").innerHTML = `
+    <div><span class="contribution-icon ${fund.id === "family" ? "green" : "indigo"}">${iconSVG(fund.icon)}</span><div><small>Caisse sélectionnée</small><strong>${escapeHTML(fund.name)}</strong></div></div>
+    <div class="fund-config-facts"><span><small>Mensualité</small><b>${formatMoney(fund.monthlyAmount)} €</b></span><span><small>Depuis</small><b>${formatPeriod(fund.startDate)}</b></span><span><small>Échéance</small><b>Le ${fund.dueDay}</b></span></div>`;
 }
 
 function renderActivities() {
@@ -184,30 +319,131 @@ function renderAdminPayments() {
     </article>`).join("");
 }
 
+function renderMemberStatuses() {
+  const container = document.querySelector("#member-status-list");
+  if (!canRecordCash() || !workspace?.members?.length) {
+    container.innerHTML = '<div class="empty-state compact-empty"><span>👥</span><strong>Aucun membre</strong><p>Les membres rattachés apparaîtront ici.</p></div>';
+    return;
+  }
+  const fund = workspace.funds.find((item) => item.code === adminFundView);
+  if (!fund) return;
+  container.innerHTML = workspace.members.map((member) => {
+    const situation = fundSituation(member.id, fund.id);
+    const upToDate = situation.outstanding <= 0;
+    return `<article class="member-status-row">
+      <span class="member-avatar">${initials(member.full_name)}</span>
+      <div><strong>${escapeHTML(member.full_name)}</strong><small>${upToDate ? "À jour" : `${situation.missingMonths} mois manquant${situation.missingMonths > 1 ? "s" : ""}`}</small></div>
+      <div class="member-due ${upToDate ? "paid" : "late"}"><b>${formatMoney(situation.outstanding)} €</b><small>${upToDate ? "Payé" : "À encaisser"}</small></div>
+    </article>`;
+  }).join("");
+}
+
+function renderFundSettings() {
+  const container = document.querySelector("#fund-settings-list");
+  if (!workspace?.funds?.length) {
+    container.innerHTML = '<div class="empty-state compact-empty"><span>⚙</span><strong>Caisses non synchronisées</strong></div>';
+    return;
+  }
+  container.innerHTML = workspace.funds.map((fund) => `
+    <article class="fund-setting-row">
+      <span class="contribution-icon ${fund.code === "family" ? "green" : "indigo"}">${iconSVG(fund.code === "family" ? "family" : "shield")}</span>
+      <div><strong>${escapeHTML(fund.name)}</strong><small>${formatMoney(Number(fund.monthly_amount))} € / mois • depuis ${formatPeriod(fund.start_date)}</small></div>
+      ${workspace.membership.role === "admin" ? `<button type="button" data-edit-fund="${escapeHTML(fund.code)}" aria-label="Modifier ${escapeHTML(fund.name)}">Modifier</button>` : ""}
+    </article>`).join("");
+}
+
 function renderPaymentOptions() {
-  document.querySelector("#payment-contribution").innerHTML = state.contributions.map((item) => `<option value="${item.id}">${escapeHTML(item.name)}</option>`).join("");
+  const previousFund = document.querySelector("#payment-contribution").value || currentFundView;
+  const previousMember = document.querySelector("#payment-member").value;
+  document.querySelector("#payment-contribution").innerHTML = state.contributions
+    .filter((item) => item.backendId)
+    .map((item) => `<option value="${item.id}">${escapeHTML(item.name)}</option>`).join("");
+  const members = canRecordCash() ? workspace.members : [];
+  document.querySelector("#payment-member").innerHTML = members.length
+    ? members.map((member) => `<option value="${escapeHTML(member.id)}">${escapeHTML(member.full_name)}</option>`).join("")
+    : '<option value="">Aucun membre disponible</option>';
+  if (members.some((member) => member.id === previousMember)) document.querySelector("#payment-member").value = previousMember;
+  document.querySelector("#payment-contribution").value = state.contributions.some((item) => item.id === previousFund && item.backendId) ? previousFund : state.contributions.find((item) => item.backendId)?.id || "";
+  document.querySelector("#quick-fund-grid").innerHTML = state.contributions.filter((item) => item.backendId).map((item) => `
+    <button class="${document.querySelector("#payment-contribution").value === item.id ? "active" : ""}" type="button" data-quick-fund="${item.id}">
+      <span class="contribution-icon ${item.id === "family" ? "green" : "indigo"}">${iconSVG(item.icon)}</span><strong>${escapeHTML(item.name)}</strong><small>${formatMoney(item.monthlyAmount)} € / mois</small>
+    </button>`).join("");
+  updateQuickPaymentSummary();
+}
+
+function updateQuickPaymentSummary() {
+  const memberId = document.querySelector("#payment-member")?.value;
+  const code = document.querySelector("#payment-contribution")?.value;
+  const fund = workspace?.funds?.find((item) => item.code === code);
+  const summary = document.querySelector("#quick-payment-summary");
+  if (!summary) return;
+  const situation = memberId && fund ? fundSituation(memberId, fund.id) : null;
+  const amount = situation ? Math.min(situation.outstanding, Number(fund.monthly_amount) * paymentMonthCount) : 0;
+  document.querySelector("#payment-amount").value = amount > 0 ? amount.toFixed(2) : "";
+  summary.innerHTML = situation
+    ? `<span>Reste à payer</span><strong>${formatMoney(situation.outstanding)} €</strong><small>${situation.missingMonths} mensualité${situation.missingMonths === 1 ? "" : "s"} manquante${situation.missingMonths === 1 ? "" : "s"} • ${formatMoney(Number(fund.monthly_amount))} € / mois</small>`
+    : '<span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small>';
+}
+
+function renderIdentity() {
+  const connected = Boolean(backendSession && workspace?.user);
+  const member = workspace?.membership;
+  const displayName = member?.full_name || workspace?.user?.email || "Non connecté";
+  document.querySelector("#profile-name").textContent = displayName;
+  document.querySelector("#profile-avatar").textContent = initials(displayName);
+  document.querySelector("#profile-meta").textContent = member
+    ? `${workspace.family?.name || "Ma famille"} • Données synchronisées`
+    : connected ? "Compte connecté, accès familial non attribué" : "Connectez-vous pour voir votre situation réelle";
+  document.querySelector("#profile-role").textContent = member ? roleLabel(member.role) : "Accès protégé";
+  document.querySelector("#auth-button").textContent = connected ? "Se déconnecter" : "Se connecter par e-mail";
+  document.querySelector("#admin-pill-label").textContent = canRecordCash() ? "Gestion" : connected ? "Accès" : "Connexion";
+  document.querySelector("#admin-role-label").textContent = member ? `${roleLabel(member.role)} • ${member.full_name}` : "Personne habilitée";
+  document.querySelector("#home-collected-label").textContent = canRecordCash() ? "Collecté en espèces" : "Mes versements";
+  document.querySelector("#home-available-label").textContent = canRecordCash() ? "Disponible" : "Enregistrés";
+  document.querySelector("#cash-balance-label").textContent = canRecordCash() ? "Solde disponible" : "Mes versements enregistrés";
+  document.querySelector("#cash-in-label").textContent = canRecordCash() ? "Entrées en espèces" : "Mes entrées en espèces";
+  document.querySelector("#cash-privacy-label").lastChild.textContent = canRecordCash() ? "Vue gestion" : "Vue personnelle";
+
+  const title = document.querySelector("#sync-status-title");
+  const detail = document.querySelector("#sync-status-detail");
+  const banner = document.querySelector("#sync-banner");
+  banner.classList.toggle("synced", Boolean(member));
+  banner.classList.toggle("warning", connected && !member);
+  if (syncing) {
+    title.textContent = "Synchronisation…";
+    detail.textContent = "Lecture sécurisée des données Supabase.";
+  } else if (member) {
+    title.textContent = "Données Supabase synchronisées";
+    detail.textContent = `${workspace.family?.name || "Ma famille"} • ${roleLabel(member.role)}`;
+  } else if (connected) {
+    title.textContent = "Accès familial à attribuer";
+    detail.textContent = "Un administrateur doit rattacher ce compte à Ma famille.";
+  } else {
+    title.textContent = "Connexion requise";
+    detail.textContent = "Connectez-vous pour consulter vos données Supabase.";
+  }
 }
 
 function renderSummaries() {
-  const collected = totalCollected();
+  const cashCollected = totalCollected();
   const outstanding = outstandingTotal();
   const paidFunds = state.contributions.filter((item) => item.paid > 0).length;
   const late = state.contributions.filter((item) => contributionStatus(item) === "late").reduce((sum, item) => sum + Math.max(0, item.amount - item.paid), 0);
+  const selected = state.contributions.find((item) => item.id === currentFundView) || state.contributions[0];
+  const selectedRemaining = Math.max(0, selected.amount - selected.paid);
+  const selectedLate = contributionStatus(selected) === "late" ? selectedRemaining : 0;
 
   document.querySelector("#balance-total").textContent = formatMoney(outstanding);
   document.querySelector("#welcome-status-text").textContent = late ? `${formatMoney(late)} € en retard` : "Aucune échéance en retard";
   document.querySelector("#progress-label").textContent = `${paidFunds}/2`;
   document.querySelector(".month-progress").setAttribute("aria-label", `${paidFunds} caisse sur 2 avec un versement enregistré`);
   document.querySelector(".month-progress .progress-value").style.strokeDasharray = `${Math.round((paidFunds / 2) * 145)} 145`;
-  document.querySelector("#paid-summary").textContent = `${formatMoney(collected)} €`;
-  document.querySelector("#late-summary").textContent = `${formatMoney(late)} €`;
-  document.querySelector("#upcoming-summary").textContent = `${formatMoney(outstanding - late)} €`;
-  document.querySelector("#home-collected").textContent = `${formatMoney(collected)} €`;
-  document.querySelector("#home-available").textContent = `${formatMoney(collected)} €`;
-  document.querySelector("#cash-balance").textContent = `${formatMoney(collected, 2)} €`;
-  document.querySelector("#cash-in").textContent = `+ ${formatMoney(collected)} €`;
-  document.querySelector("#cash-updated").textContent = state.payments.length ? "Mis à jour après le dernier paiement en espèces" : "Aucune opération enregistrée";
-  document.querySelector("#admin-cash-total").textContent = `${formatMoney(collected)} €`;
+  document.querySelector("#paid-summary").textContent = `${formatMoney(selected.paid)} €`;
+  document.querySelector("#late-summary").textContent = `${formatMoney(selectedLate)} €`;
+  document.querySelector("#upcoming-summary").textContent = `${formatMoney(selectedRemaining - selectedLate)} €`;
+  document.querySelector("#home-collected").textContent = `${formatMoney(cashCollected)} €`;
+  document.querySelector("#home-available").textContent = `${formatMoney(cashCollected)} €`;
+  document.querySelector("#admin-cash-total").textContent = `${formatMoney(cashCollected)} €`;
   document.querySelector("#admin-payment-count").textContent = state.payments.length;
   document.querySelector("#admin-payment-count").nextElementSibling.textContent = state.payments.length ? `${state.payments.length} opération${state.payments.length > 1 ? "s" : ""}` : "Historique vide";
 }
@@ -216,15 +452,24 @@ function renderAll() {
   renderHomeContributions();
   renderDetailedContributions();
   renderTransactions();
+  renderFundAccount();
   renderActivities();
   renderAdminPayments();
+  renderMemberStatuses();
+  renderFundSettings();
   renderPaymentOptions();
   renderSummaries();
+  renderIdentity();
   document.querySelector("#slow-speech-toggle").checked = state.settings.slowSpeech;
 }
 
 function navigate(page) {
   if (!document.querySelector(`[data-page="${page}"]`)) return;
+  if (page === "gestion" && !canRecordCash()) {
+    if (!backendSession) openSheet("auth-sheet");
+    else showToast("Ce compte n’est pas habilité à enregistrer des paiements.");
+    return;
+  }
   closeSheets();
   document.querySelectorAll(".page").forEach((element) => element.classList.toggle("active", element.dataset.page === page));
   document.querySelectorAll(".bottom-nav [data-nav]").forEach((button) => button.classList.toggle("active", button.dataset.nav === page));
@@ -250,7 +495,7 @@ function closeSheets() {
 function summarySpeech() {
   const outstanding = outstandingTotal();
   const late = state.contributions.filter((item) => contributionStatus(item) === "late");
-  const paid = totalCollected();
+  const paid = personalCollected();
   if (!outstanding && !paid) return "Vous n'avez aucune échéance enregistrée et aucun retard. Aucun paiement en espèces n'est encore enregistré dans la caisse famille ou la caisse décès.";
   let text = `Vous avez versé ${formatMoney(paid)} euros au total. Il vous reste ${formatMoney(outstanding)} euros à payer.`;
   text += late.length ? ` Vous avez ${late.length} cotisation en retard.` : " Vous n'avez aucun retard.";
@@ -267,7 +512,8 @@ function contributionsSpeech() {
 }
 
 function fundSpeech() {
-  return `Les deux caisses contiennent ${formatMoney(totalCollected())} euros enregistrés en espèces. Il n'y a aucune dépense enregistrée.`;
+  if (canRecordCash()) return `Les deux caisses contiennent ${formatMoney(totalCollected())} euros enregistrés en espèces. Il n'y a aucune dépense enregistrée.`;
+  return `Vos versements en espèces dans les deux caisses totalisent ${formatMoney(personalCollected())} euros.`;
 }
 
 function speak(text) {
@@ -338,56 +584,101 @@ function executeVoiceCommand(command) {
   speak(text);
 }
 
-function recordCashPayment(event) {
+function openQuickPayment() {
+  if (!canRecordCash()) return showToast("Autorisation Supabase insuffisante.");
+  paymentMonthCount = 1;
+  document.querySelectorAll("[data-month-count]").forEach((button) => button.classList.toggle("active", button.dataset.monthCount === "1"));
+  const preferredFund = state.contributions.find((item) => item.id === adminFundView && item.backendId) ? adminFundView : state.contributions.find((item) => item.backendId)?.id;
+  if (preferredFund) document.querySelector("#payment-contribution").value = preferredFund;
+  document.querySelectorAll("[data-quick-fund]").forEach((button) => button.classList.toggle("active", button.dataset.quickFund === preferredFund));
+  setDefaultPaymentDates();
+  updateQuickPaymentSummary();
+  openSheet("payment-sheet");
+}
+
+function openFundConfig(code) {
+  if (workspace?.membership?.role !== "admin") return showToast("Seul un administrateur peut modifier une caisse.");
+  const fund = workspace.funds.find((item) => item.code === code);
+  if (!fund) return;
+  document.querySelector("#fund-config-id").value = fund.id;
+  document.querySelector("#fund-config-name").value = fund.name;
+  document.querySelector("#fund-config-description").value = fund.description || "";
+  document.querySelector("#fund-config-amount").value = Number(fund.monthly_amount).toFixed(2);
+  document.querySelector("#fund-config-day").value = fund.due_day;
+  document.querySelector("#fund-config-start").value = String(fund.start_date).slice(0, 7);
+  document.querySelector("#fund-config-title").textContent = `Configurer ${fund.name}`;
+  openSheet("fund-config-sheet");
+}
+
+async function submitFundConfiguration(event) {
   event.preventDefault();
+  if (workspace?.membership?.role !== "admin") return showToast("Autorisation administrateur requise.");
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = "Mise à jour des mensualités…";
+  try {
+    await window.JappoBackend.configureFund({
+      p_fund_id: document.querySelector("#fund-config-id").value,
+      p_name: document.querySelector("#fund-config-name").value.trim(),
+      p_description: document.querySelector("#fund-config-description").value.trim(),
+      p_monthly_amount: Number(document.querySelector("#fund-config-amount").value),
+      p_start_date: `${document.querySelector("#fund-config-start").value}-01`,
+      p_due_day: Number(document.querySelector("#fund-config-day").value)
+    });
+    await syncFromBackend({ quiet: true });
+    closeSheets();
+    showToast("Configuration enregistrée et mensualités recalculées.");
+  } catch (error) {
+    showToast(error.message || "La caisse n’a pas pu être modifiée.");
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Enregistrer la configuration";
+  }
+}
+
+async function recordCashPayment(event) {
+  event.preventDefault();
+  if (!canRecordCash() || !backendSession) return showToast("Autorisation Supabase insuffisante.");
   const contributionId = document.querySelector("#payment-contribution").value;
   const contribution = state.contributions.find(({ id }) => id === contributionId);
+  const memberId = document.querySelector("#payment-member").value;
   const amount = Number(document.querySelector("#payment-amount").value);
   const dateValue = document.querySelector("#payment-date").value;
-  const periodValue = document.querySelector("#payment-period").value;
   const note = document.querySelector("#payment-note").value.trim();
-  if (!contribution || !Number.isFinite(amount) || amount <= 0 || !dateValue || !periodValue) return showToast("Vérifiez les informations du paiement.");
+  if (!contribution?.backendId || !memberId || !Number.isFinite(amount) || amount <= 0 || !dateValue) return showToast("Vérifiez les informations du paiement.");
 
-  const date = new Date(`${dateValue}T12:00:00`);
-  const period = new Date(`${periodValue}-01T12:00:00`);
-  const payment = {
-    id: uid("cash"),
-    member: "Membre connecté",
-    contributionId,
-    contribution: contribution.name,
-    amount,
-    method: "Espèces",
-    date: dateValue,
-    dateLabel: new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" }).format(date),
-    period: periodValue,
-    periodLabel: new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(period),
-    note,
-    recordedBy: "Personne habilitée"
-  };
-
-  state.payments.unshift(payment);
-  contribution.paid += amount;
-  contribution.status = contributionStatus(contribution);
-  state.activities.unshift({
-    id: uid("activity"),
-    group: "Aujourd’hui",
-    title: "Paiement en espèces enregistré",
-    text: `${payment.member} • ${payment.contribution} • ${formatMoney(amount)} €`,
-    time: `Enregistré par ${payment.recordedBy}`
-  });
-  saveState();
-  renderAll();
-  event.target.reset();
-  setDefaultPaymentDates();
-  closeSheets();
-  openSheet("confirm-modal");
-  speak(`Le paiement en espèces de ${formatMoney(amount)} euros pour ${contribution.name} est enregistré.`);
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = "Enregistrement sécurisé…";
+  try {
+    await window.JappoBackend.recordCashPayment({
+      p_family_id: workspace.membership.family_id,
+      p_fund_id: contribution.backendId,
+      p_member_id: memberId,
+      p_amount: amount,
+      p_payment_date: dateValue,
+      p_note: note || null
+    });
+    await syncFromBackend({ quiet: true });
+    event.target.reset();
+    paymentMonthCount = 1;
+    renderPaymentOptions();
+    setDefaultPaymentDates();
+    closeSheets();
+    document.querySelector("#confirm-message").textContent = `Le paiement de ${formatMoney(amount)} € a été accepté par Supabase et ajouté à l’historique.`;
+    openSheet("confirm-modal");
+    speak(`Le paiement en espèces de ${formatMoney(amount)} euros pour ${contribution.name} est enregistré.`);
+  } catch (error) {
+    showToast(error.message || "Le paiement n’a pas pu être enregistré.");
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Enregistrer le paiement en espèces";
+  }
 }
 
 function setDefaultPaymentDates() {
   const now = new Date();
   document.querySelector("#payment-date").valueAsDate = now;
-  document.querySelector("#payment-period").value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function showToast(message) {
@@ -398,15 +689,85 @@ function showToast(message) {
   toastTimer = setTimeout(() => toast.classList.remove("show"), 3200);
 }
 
+async function syncFromBackend({ quiet = false } = {}) {
+  if (!window.JappoBackend?.configured()) {
+    backendSession = null;
+    workspace = null;
+    if (!quiet) showToast("La configuration Supabase est absente de ce déploiement.");
+    renderAll();
+    return;
+  }
+  syncing = true;
+  renderAll();
+  try {
+    backendSession = await window.JappoBackend.initializeSession();
+    if (!backendSession) {
+      workspace = null;
+      state = cloneInitialState();
+    } else {
+      applyWorkspace(await window.JappoBackend.loadWorkspace());
+    }
+  } catch (error) {
+    if (!quiet) showToast(error.message || "La synchronisation Supabase a échoué.");
+  } finally {
+    syncing = false;
+    renderAll();
+  }
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const email = document.querySelector("#auth-email").value.trim().toLowerCase();
+  const status = document.querySelector("#auth-status");
+  const submit = document.querySelector("#auth-submit");
+  if (!email) return;
+  submit.disabled = true;
+  submit.textContent = "Envoi en cours…";
+  status.textContent = "";
+  try {
+    await window.JappoBackend.sendMagicLink(email);
+    status.textContent = "Lien envoyé. Ouvrez votre e-mail puis touchez le lien pour revenir dans Jàppoo.";
+    event.target.reset();
+  } catch (error) {
+    status.textContent = error.message || "Le lien n’a pas pu être envoyé.";
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Recevoir mon lien de connexion";
+  }
+}
+
+async function authOrSignOut() {
+  if (!backendSession) return openSheet("auth-sheet");
+  await window.JappoBackend.signOut();
+  backendSession = null;
+  workspace = null;
+  state = cloneInitialState();
+  saveState();
+  renderAll();
+  navigate("home");
+  showToast("Vous êtes déconnecté.");
+}
+
+async function authOrSync() {
+  if (!backendSession) return openSheet("auth-sheet");
+  await syncFromBackend();
+  showToast("Données Supabase actualisées.");
+}
+
 function handleAction(action) {
+  const personalPaymentCount = workspace?.membership
+    ? state.payments.filter((payment) => payment.memberId === workspace.membership.id).length
+    : 0;
   const messages = {
     "family-switch": "Espace familial actif : Ma famille.",
     notifications: state.activities.length ? `${state.activities.length} activité récente.` : "Aucune notification pour le moment.",
-    documents: state.payments.length ? `${state.payments.length} reçu${state.payments.length > 1 ? "s" : ""} disponible${state.payments.length > 1 ? "s" : ""}.` : "Aucun reçu disponible pour le moment.",
+    documents: personalPaymentCount ? `${personalPaymentCount} reçu${personalPaymentCount > 1 ? "s" : ""} disponible${personalPaymentCount > 1 ? "s" : ""}.` : "Aucun reçu disponible pour le moment.",
     "admin-profile": "Accès réservé à une personne habilitée."
   };
   if (messages[action]) return showToast(messages[action]);
-  if (action === "record-cash") return openSheet("payment-sheet");
+  if (action === "record-cash") return openQuickPayment();
+  if (action === "auth-or-signout") return authOrSignOut();
+  if (action === "auth-or-sync") return authOrSync();
   if (action === "open-voice") return openSheet("voice-sheet");
   if (action === "close-sheets" || action === "close-confirm") return closeSheets();
   if (action === "start-listening") return startListening();
@@ -428,6 +789,54 @@ function setupEvents() {
   document.addEventListener("click", (event) => {
     const navButton = event.target.closest("[data-nav]");
     if (navButton) return navigate(navButton.dataset.nav);
+    const fundViewButton = event.target.closest("[data-fund-view]");
+    if (fundViewButton) {
+      currentFundView = fundViewButton.dataset.fundView;
+      document.querySelectorAll("[data-fund-view]").forEach((button) => {
+        button.classList.toggle("active", button === fundViewButton);
+        button.setAttribute("aria-selected", String(button === fundViewButton));
+      });
+      renderDetailedContributions();
+      renderSummaries();
+      return;
+    }
+    const cashFundButton = event.target.closest("[data-cash-fund]");
+    if (cashFundButton) {
+      cashFundView = cashFundButton.dataset.cashFund;
+      document.querySelectorAll("[data-cash-fund]").forEach((button) => {
+        button.classList.toggle("active", button === cashFundButton);
+        button.setAttribute("aria-selected", String(button === cashFundButton));
+      });
+      renderFundAccount();
+      renderTransactions();
+      return;
+    }
+    const adminFundButton = event.target.closest("[data-admin-fund]");
+    if (adminFundButton) {
+      adminFundView = adminFundButton.dataset.adminFund;
+      document.querySelectorAll("[data-admin-fund]").forEach((button) => {
+        button.classList.toggle("active", button === adminFundButton);
+        button.setAttribute("aria-selected", String(button === adminFundButton));
+      });
+      renderMemberStatuses();
+      return;
+    }
+    const quickFundButton = event.target.closest("[data-quick-fund]");
+    if (quickFundButton) {
+      document.querySelector("#payment-contribution").value = quickFundButton.dataset.quickFund;
+      document.querySelectorAll("[data-quick-fund]").forEach((button) => button.classList.toggle("active", button === quickFundButton));
+      updateQuickPaymentSummary();
+      return;
+    }
+    const monthCountButton = event.target.closest("[data-month-count]");
+    if (monthCountButton) {
+      paymentMonthCount = monthCountButton.dataset.monthCount === "all" ? Number.POSITIVE_INFINITY : Number(monthCountButton.dataset.monthCount);
+      document.querySelectorAll("[data-month-count]").forEach((button) => button.classList.toggle("active", button === monthCountButton));
+      updateQuickPaymentSummary();
+      return;
+    }
+    const editFundButton = event.target.closest("[data-edit-fund]");
+    if (editFundButton) return openFundConfig(editFundButton.dataset.editFund);
     const actionButton = event.target.closest("[data-action]");
     if (actionButton) return handleAction(actionButton.dataset.action);
     const voiceButton = event.target.closest("[data-voice-command]");
@@ -440,6 +849,9 @@ function setupEvents() {
   });
   document.querySelector("#modal-backdrop").addEventListener("click", closeSheets);
   document.querySelector("#payment-form").addEventListener("submit", recordCashPayment);
+  document.querySelector("#fund-config-form").addEventListener("submit", submitFundConfiguration);
+  document.querySelector("#auth-form").addEventListener("submit", submitAuth);
+  document.querySelector("#payment-member").addEventListener("change", updateQuickPaymentSummary);
   document.querySelectorAll("[data-filter]").forEach((button) => button.addEventListener("click", () => {
     currentFilter = button.dataset.filter;
     document.querySelectorAll("[data-filter]").forEach((item) => item.classList.toggle("active", item === button));
@@ -465,14 +877,18 @@ function setupPWA() {
   window.addEventListener("appinstalled", () => showToast("Jàppoo est installé sur votre appareil."));
 }
 
-function boot() {
+async function boot() {
   const now = new Date();
   document.querySelector("#today-label").textContent = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(now);
   setDefaultPaymentDates();
   renderAll();
   setupEvents();
   setupPWA();
+  await syncFromBackend({ quiet: true });
   if (new URLSearchParams(location.search).get("action") === "voice") openSheet("voice-sheet");
 }
 
-boot();
+boot().catch((error) => {
+  console.error("Démarrage impossible", error);
+  showToast("Jàppoo n’a pas pu démarrer correctement.");
+});
