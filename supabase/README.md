@@ -49,4 +49,4 @@ pas approuvé, et refuse toute écriture financière au niveau lecture seule.
 3. Vérifier que `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` et `VAPID_SUBJECT` sont également configurés.
 4. Copier `cron/setup_due_reminders.sql.template`, remplacer `<CRON_SECRET>` et `<PROJECT_URL>`, puis exécuter la copie dans le SQL Editor.
 
-Le modèle utilise Supabase Vault, `pg_cron` et `pg_net`. Le secret n’est jamais enregistré dans Git. Le rappel quotidien est programmé à 08:00 UTC et la table `due_reminder_log` empêche un doublon le même jour.
+Le modèle utilise Supabase Vault, `pg_cron` et `pg_net`. Le secret n’est jamais enregistré dans Git. Un seul rappel est programmé le premier jour de chaque mois à 08:00 UTC ; la table `due_reminder_log` empêche tout doublon mensuel.

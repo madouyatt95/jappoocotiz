@@ -12,7 +12,7 @@ const checks = [
   ["orientation mobile", contents["manifest.webmanifest"].includes('"orientation": "portrait-primary"')],
   ["viewport et safe-area", contents["index.html"].includes("viewport-fit=cover") && contents["styles.css"].includes("env(safe-area-inset-bottom)")],
   ["mode plein écran", contents["styles.css"].includes("100dvh")],
-  ["service worker v14", contents["app.js"].includes("serviceWorker.register") && contents["sw.js"].includes("jappo-cotiz-v14")],
+  ["service worker v15", contents["app.js"].includes("serviceWorker.register") && contents["sw.js"].includes("jappo-cotiz-v15")],
   ["cache de lecture sans démo", contents["app.js"].includes("jappo-cotiz-read-cache-v3") && contents["app.js"].includes("payments: []") && contents["app.js"].includes("activities: []")],
   ["deux caisses initiales sans données fictives", contents["app.js"].includes('{ id: "family"') && contents["app.js"].includes('{ id: "death"') && !contents["app.js"].includes("Projet maison") && !contents["app.js"].includes("Fête familiale")],
   ["aucune identité fictive", !contents["index.html"].includes("Mahamadou") && !contents["app.js"].includes("Aminata") && !contents["app.js"].includes("Ousmane")],
@@ -73,7 +73,8 @@ checks.push(["import historique CSV et Excel", contents["index.html"].includes('
 checks.push(["exceptions de cotisation protégées", contents["index.html"].includes('id="member-exception-form"') && contents["supabase/migrations/202607190008_governance_import_and_meeting.sql"].includes("set_member_fund_exception") && contents["app.js"].includes("submitMemberException")]);
 checks.push(["droits multi-caisses arbitraires", contents["app.js"].includes("fund-access-check") && contents["app.js"].includes("saveSelectedFundAccess") && contents["supabase/migrations/202607190007_dynamic_funds_and_due_refresh.sql"].includes("cardinality(write_fund_codes) <= 50")]);
 checks.push(["dépenses enrichies et double validation", contents["index.html"].includes('id="expense-receipt"') && contents["index.html"].includes('id="fund-config-threshold"') && contents["supabase/migrations/202607190008_governance_import_and_meeting.sql"].includes("review_cash_expense") && contents["supabase-client.js"].includes("uploadExpenseReceipt")]);
-checks.push(["rappels push planifiés côté serveur", contents["supabase/functions/send-due-reminders/index.ts"].includes("list_due_reminder_targets") && contents["supabase/functions/send-due-reminders/index.ts"].includes("sendNotification") && contents["supabase/cron/setup_due_reminders.sql.template"].includes("cron.schedule")]);
+checks.push(["rappel push mensuel côté serveur", contents["supabase/functions/send-due-reminders/index.ts"].includes("Rappel mensuel de cotisations") && contents["supabase/functions/send-due-reminders/index.ts"].includes("sendNotification") && contents["supabase/cron/setup_due_reminders.sql.template"].includes("'0 8 1 * *'")]);
+checks.push(["aucun rappel local quotidien", !contents["app.js"].includes("maybeNotifyDueSummary") && !contents["app.js"].includes("due-summary-")]);
 checks.push(["journal administratif", contents["index.html"].includes('id="admin-audit-list"') && contents["supabase/migrations/202607190008_governance_import_and_meeting.sql"].includes("admin_audit_events") && contents["app.js"].includes("renderAdminAudit")]);
 checks.push(["mode réunion sans identités", contents["index.html"].includes("Aucun nom, pseudo ou retard individuel") && contents["supabase/migrations/202607190008_governance_import_and_meeting.sql"].includes("get_meeting_summary") && contents["app.js"].includes("openMeetingMode")]);
 

@@ -50,10 +50,10 @@ export default {
       }
 
       const amount = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(Number(target.total_due || 0));
-      const title = target.reminder_type === "late" ? "Cotisations en retard" : "Échéance de cotisation";
-      const body = target.reminder_type === "late"
+      const title = "Rappel mensuel de cotisations";
+      const body = Number(target.late_months || 0) > 0
         ? `Il reste ${amount} € à régulariser, dont ${target.late_months} mensualité(s) en retard.`
-        : `Il reste ${amount} € à régler. Consultez votre fiche pour voir les échéances.`;
+        : `Il reste ${amount} € à régler. Consultez votre fiche pour voir les échéances du mois.`;
       const payload = JSON.stringify({
         title,
         body,

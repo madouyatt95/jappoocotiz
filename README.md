@@ -78,7 +78,7 @@ Le code membre n’est jamais stocké en clair : seule son empreinte est conserv
 - chaque caisse peut imposer une seconde validation à partir d’un seuil choisi ; la personne ayant saisi la dépense ne peut pas la valider elle-même ;
 - le journal administratif retrace les changements de droits, de caisses, de périodes, les imports et les opérations sensibles ;
 - le mode réunion familiale n’affiche que les totaux par caisse, sans nom, pseudo ni retard individuel ;
-- les rappels push sont préparés pour un déclenchement quotidien côté serveur, même lorsque la PWA est fermée.
+- un unique rappel push mensuel est préparé côté serveur pour les membres ayant un reste à payer, même lorsque la PWA est fermée.
 
 Les membres et leurs dates d'adhésion doivent être rattachés explicitement à l'espace familial. L'administrateur initial doit aussi être choisi explicitement : aucun des comptes Supabase existants ne reçoit automatiquement des droits de gestion.
 

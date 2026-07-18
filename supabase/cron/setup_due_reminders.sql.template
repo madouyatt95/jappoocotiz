@@ -2,12 +2,15 @@
 -- Le secret doit être identique au secret CRON_SECRET de l'Edge Function.
 -- Documentation officielle : https://supabase.com/docs/guides/functions/schedule-functions
 
+create extension if not exists pg_cron;
+create extension if not exists pg_net with schema extensions;
+
 select vault.create_secret('<CRON_SECRET>', 'jappo_due_reminder_cron_secret');
 select vault.create_secret('<PROJECT_URL>', 'jappo_project_url');
 
 select cron.schedule(
-  'jappo-due-reminders-daily',
-  '0 8 * * *',
+  'jappo-due-reminders-monthly',
+  '0 8 1 * *',
   $$
   select net.http_post(
     url := (select decrypted_secret from vault.decrypted_secrets where name = 'jappo_project_url')

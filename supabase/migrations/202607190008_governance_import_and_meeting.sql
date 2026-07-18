@@ -616,29 +616,21 @@ begin
   with situations as (
     select member.family_id, member.id member_id, member.user_id, member.full_name,
       sum(period.amount_due - period.amount_paid) total_due,
-      count(*) filter (where period.due_date < p_today) late_months,
-      count(*) filter (where period.due_date between p_today and p_today + 3) upcoming_months
+      count(*) filter (where period.due_date < p_today) late_months
     from public.family_members member
     join public.contribution_periods period on period.member_id = member.id
       and period.status not in ('exempt', 'cancelled') and period.amount_paid < period.amount_due
     where member.active and member.approval_status = 'approved' and member.user_id is not null
     group by member.family_id, member.id, member.user_id, member.full_name
-  ), targets as (
-    select situation.*,
-      case when situation.late_months > 0 then 'late'
-        when situation.upcoming_months > 0 then 'upcoming'
-        when extract(day from p_today) = 1 then 'monthly'
-        else null end reminder_type
-    from situations situation
   )
-  select target.family_id, target.member_id, target.user_id, target.full_name,
-    target.total_due, target.late_months, target.reminder_type
-  from targets target
-  where target.reminder_type is not null
-    and exists (select 1 from public.push_subscriptions subscription where subscription.member_id = target.member_id)
+  select situation.family_id, situation.member_id, situation.user_id, situation.full_name,
+    situation.total_due, situation.late_months, 'monthly'::text
+  from situations situation
+  where extract(day from p_today) = 1
+    and exists (select 1 from public.push_subscriptions subscription where subscription.member_id = situation.member_id)
     and not exists (
       select 1 from public.due_reminder_log sent
-      where sent.member_id = target.member_id and sent.reminder_date = p_today and sent.reminder_type = target.reminder_type
+      where sent.member_id = situation.member_id and sent.reminder_date = p_today and sent.reminder_type = 'monthly'
     );
 end;
 $$;

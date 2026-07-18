@@ -1769,7 +1769,6 @@ async function syncFromBackend({ quiet = false } = {}) {
   } finally {
     syncing = false;
     renderAll();
-    maybeNotifyDueSummary().catch(() => null);
   }
 }
 
@@ -2025,23 +2024,6 @@ async function togglePushNotifications() {
   } finally {
     await refreshPushStatus().catch(() => null);
   }
-}
-
-async function maybeNotifyDueSummary() {
-  if (!pushSupported() || Notification.permission !== "granted" || !workspace?.membership?.active) return;
-  const today = new Date().toISOString().slice(0, 10);
-  const reminderKey = `jappo-cotiz-due-reminder-${workspace.membership.id}`;
-  if (localStorage.getItem(reminderKey) === today || outstandingTotal() <= 0) return;
-  const registration = await getServiceWorkerRegistration();
-  if (!await registration.pushManager.getSubscription()) return;
-  await registration.showNotification("Votre situation Jàppoo", {
-    body: `Il vous reste ${formatMoney(outstandingTotal())} € à régulariser sur vos cotisations.`,
-    icon: "./assets/icon.svg",
-    badge: "./assets/icon.svg",
-    tag: `due-summary-${today}`,
-    data: { url: "/?notification=reminder" }
-  });
-  localStorage.setItem(reminderKey, today);
 }
 
 function handleAction(action) {
