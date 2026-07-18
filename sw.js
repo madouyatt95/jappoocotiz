@@ -1,12 +1,13 @@
-const CACHE_NAME = "jappo-cotiz-v13";
+const CACHE_NAME = "jappo-cotiz-v14";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=12",
-  "./app.js?v=13",
-  "./supabase-client.js?v=10",
+  "./styles.css?v=13",
+  "./app.js?v=14",
+  "./supabase-client.js?v=11",
   "./manifest.webmanifest",
-  "./assets/icon.svg"
+  "./assets/icon.svg",
+  "./assets/fflate.min.js?v=1"
 ];
 
 self.addEventListener("install", (event) => {

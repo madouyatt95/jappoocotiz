@@ -232,20 +232,20 @@
       limit: "1"
     });
     const membership = memberships[0] || null;
-    if (!membership) return { user, membership: null, family: null, funds: [], periods: [], payments: [], expenses: [], activityPayments: [], members: [], schedules: [] };
+    if (!membership) return { user, membership: null, family: null, funds: [], periods: [], payments: [], expenses: [], activityPayments: [], members: [], schedules: [], exceptions: [], adminActivity: [] };
 
     const approved = membership.active && membership.approval_status === "approved";
     if (!approved) {
-      return { user, membership, family: null, funds: [], periods: [], payments: [], expenses: [], activityPayments: [], members: [membership], schedules: [] };
+      return { user, membership, family: null, funds: [], periods: [], payments: [], expenses: [], activityPayments: [], members: [membership], schedules: [], exceptions: [], adminActivity: [] };
     }
 
     const familyId = membership.family_id;
     const authorized = membership.access_level === "write" && ["admin", "treasurer", "cash_collector"].includes(membership.role);
     const administrator = authorized && membership.role === "admin";
     if (authorized) await callRpc("refresh_due_periods", { p_family_id: familyId });
-    const [families, funds, periods, payments, expenses, activityPayments, members, schedules] = await Promise.all([
+    const [families, funds, periods, payments, expenses, activityPayments, members, schedules, exceptions, adminActivity] = await Promise.all([
       query("family_spaces", { select: "id,name,currency", id: `eq.${familyId}`, limit: "1" }),
-      query("funds", { select: "id,code,name,description,monthly_amount,frequency,start_date,due_day,display_order,active", family_id: `eq.${familyId}`, active: "eq.true", order: "display_order.asc" }),
+      query("funds", { select: "id,code,name,description,monthly_amount,frequency,start_date,due_day,display_order,active,expense_approval_threshold", family_id: `eq.${familyId}`, active: "eq.true", order: "display_order.asc" }),
       query("contribution_periods", {
         select: "id,family_id,fund_id,member_id,period_start,due_date,amount_due,amount_paid,status",
         ...(authorized ? { family_id: `eq.${familyId}` } : { member_id: `eq.${membership.id}` }),
@@ -259,7 +259,7 @@
       }),
       authorized
         ? query("cash_expenses", {
-          select: "id,family_id,fund_id,amount,reason,expense_date,spent_by,created_at",
+          select: "id,family_id,fund_id,amount,reason,expense_date,spent_by,created_at,beneficiary,category,receipt_path,status,approved_by,approved_at,rejected_by,rejected_at,review_note",
           family_id: `eq.${familyId}`,
           order: "expense_date.desc,created_at.desc"
         })
@@ -278,7 +278,16 @@
         family_id: `eq.${familyId}`,
         active: "eq.true",
         order: "updated_at.desc"
-      })
+      }),
+      administrator
+        ? query("member_fund_exceptions", {
+          select: "id,family_id,member_id,fund_id,action,start_month,end_month,note,created_by,created_at",
+          family_id: `eq.${familyId}`,
+          order: "created_at.desc",
+          limit: "100"
+        })
+        : Promise.resolve([]),
+      administrator ? callRpc("list_admin_activity", { p_family_id: familyId }) : Promise.resolve([])
     ]);
 
     return {
@@ -291,7 +300,9 @@
       expenses,
       activityPayments,
       members,
-      schedules
+      schedules,
+      exceptions,
+      adminActivity
     };
   }
 
@@ -332,6 +343,84 @@
 
   async function recordCashExpense(expense) {
     return callRpc("record_cash_expense", expense);
+  }
+
+  async function reviewCashExpense(expenseId, decision, note) {
+    return callRpc("review_cash_expense", {
+      p_expense_id: expenseId,
+      p_decision: decision,
+      p_note: note || null
+    });
+  }
+
+  async function setFundExpenseThreshold(fundId, threshold) {
+    return callRpc("set_fund_expense_threshold", {
+      p_fund_id: fundId,
+      p_threshold: threshold
+    });
+  }
+
+  async function setMemberFundException(adjustment) {
+    return callRpc("set_member_fund_exception", adjustment);
+  }
+
+  async function importCashPayments(familyId, rows) {
+    return callRpc("import_cash_payments", { p_family_id: familyId, p_rows: rows });
+  }
+
+  async function getMeetingSummary(familyId) {
+    return callRpc("get_meeting_summary", { p_family_id: familyId });
+  }
+
+  async function storageRequest(path, options = {}) {
+    let session = await initializeSession();
+    if (!session) throw new Error("Connectez-vous pour accéder au justificatif.");
+    const request = async () => fetch(`${baseUrl}/storage/v1/${path}`, {
+      method: options.method || "GET",
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${session.access_token}`,
+        ...(options.headers || {})
+      },
+      ...(options.body === undefined ? {} : { body: options.body })
+    });
+    let response = await request();
+    if (response.status === 401) {
+      session = await refreshSession(session);
+      response = await request();
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.message || payload?.error || "Le justificatif n’a pas pu être traité.");
+    return payload;
+  }
+
+  async function uploadExpenseReceipt(familyId, fundId, file) {
+    if (!file || file.size > 5 * 1024 * 1024) throw new Error("Le justificatif doit peser moins de 5 Mo.");
+    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+    if (!allowed.includes(file.type)) throw new Error("Format accepté : JPG, PNG, WebP ou PDF.");
+    const safeName = String(file.name || "justificatif").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "-").slice(-100);
+    const objectPath = `${familyId}/${fundId}/${crypto.randomUUID()}-${safeName}`;
+    await storageRequest(`object/expense-receipts/${objectPath.split("/").map(encodeURIComponent).join("/")}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type, "x-upsert": "false" },
+      body: file
+    });
+    return objectPath;
+  }
+
+  async function removeExpenseReceipt(objectPath) {
+    return storageRequest(`object/expense-receipts/${String(objectPath).split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" });
+  }
+
+  async function createExpenseReceiptUrl(objectPath) {
+    const payload = await storageRequest(`object/sign/expense-receipts/${String(objectPath).split("/").map(encodeURIComponent).join("/")}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresIn: 300 })
+    });
+    const signedPath = payload?.signedURL || payload?.signedUrl;
+    if (!signedPath) throw new Error("Lien du justificatif indisponible.");
+    return signedPath.startsWith("http") ? signedPath : `${baseUrl}/storage/v1${signedPath}`;
   }
 
   async function configureFund(configuration) {
@@ -391,6 +480,14 @@
     signInMember,
     recordCashPayment,
     recordCashExpense,
+    reviewCashExpense,
+    setFundExpenseThreshold,
+    setMemberFundException,
+    importCashPayments,
+    getMeetingSummary,
+    uploadExpenseReceipt,
+    removeExpenseReceipt,
+    createExpenseReceiptUrl,
     configureFund,
     createFund,
     reviewMemberAccess,

@@ -12,7 +12,7 @@ PWA mobile-first pour consulter et gérer les caisses de cotisation familiales.
 - un membre demande son adhésion avec un nom ou pseudo uniquement, sans e-mail ;
 - après validation, l’administrateur lui remet un code personnel à 6 chiffres pour ouvrir sa fiche ;
 - l’administrateur a toujours l’écriture sur toutes les caisses ;
-- pour chaque autre responsable, l’administrateur attribue la lecture seule ou l’écriture sur une caisse précise ou sur toutes les caisses ;
+- pour chaque autre responsable, l’administrateur attribue la lecture seule ou l’écriture sur une combinaison libre de caisses ;
 - l’onglet **Activité** présente les mouvements généraux sans exposer les identités aux comptes en lecture seule ;
 - aucune donnée de démonstration n’est préchargée ;
 - la Caisse famille et la Caisse décès sont présentes au départ ; l’administrateur peut en ajouter.
@@ -47,7 +47,7 @@ appliquées dans l’ordre de leur nom.
 2. Toucher **Ma situation** : l’assistant lit uniquement les cotisations.
 3. Sans connexion, ouvrir **Gestion** : la connexion Supabase est demandée et le formulaire de paiement reste inaccessible.
 4. Dans l’onglet **Membre**, utiliser **Première connexion** avec seulement un nom ou pseudo et vérifier que la demande apparaît chez l’administrateur.
-5. L’administrateur choisit **Lecture seule**, une caisse précise ou **Toutes les caisses**, puis communique le code à 6 chiffres affiché.
+5. L’administrateur choisit **Lecture seule** ou coche les caisses accessibles en écriture, puis communique le code à 6 chiffres affiché.
 6. Le membre utilise **Connexion avec code** avec le même pseudo et ce code pour ouvrir sa propre fiche.
 7. Dans l’onglet **Administrateur**, se connecter par e-mail et mot de passe. Après une connexion initiale par lien, le mot de passe se crée dans **Profil**.
 8. Avec un droit de saisie, vérifier que **+ Ajouter un paiement** est immédiatement visible et que seules les caisses autorisées sont proposées.
@@ -68,7 +68,17 @@ Le code membre n’est jamais stocké en clair : seule son empreinte est conserv
 - modifier cette plage conserve tous les paiements existants et annule uniquement les échéances impayées sorties de la plage ;
 - le bouton de paramétrage apparaît directement dans **Caisses** pour l’administrateur ;
 - un versement est réparti automatiquement sur les plus anciennes mensualités impayées ;
-- le bouton **À jour** renseigne en un geste le montant total des arriérés de la caisse sélectionnée.
+- le bouton **Régler tous les arriérés** renseigne en un geste le montant global, avec aperçu des mois régularisés avant validation.
+
+## Gouvernance et rapports
+
+- l’administrateur peut importer jusqu’à 2 000 paiements historiques depuis un fichier CSV ou Excel après un aperçu bloquant ;
+- les exonérations, suspensions, reprises et départs sont historisés sans modifier les mois déjà payés ;
+- les dépenses peuvent comporter une catégorie, un bénéficiaire et un justificatif privé (photo ou PDF) ;
+- chaque caisse peut imposer une seconde validation à partir d’un seuil choisi ; la personne ayant saisi la dépense ne peut pas la valider elle-même ;
+- le journal administratif retrace les changements de droits, de caisses, de périodes, les imports et les opérations sensibles ;
+- le mode réunion familiale n’affiche que les totaux par caisse, sans nom, pseudo ni retard individuel ;
+- les rappels push sont préparés pour un déclenchement quotidien côté serveur, même lorsque la PWA est fermée.
 
 Les membres et leurs dates d'adhésion doivent être rattachés explicitement à l'espace familial. L'administrateur initial doit aussi être choisi explicitement : aucun des comptes Supabase existants ne reçoit automatiquement des droits de gestion.
 

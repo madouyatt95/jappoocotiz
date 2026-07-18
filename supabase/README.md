@@ -1,7 +1,7 @@
 # Activation Supabase
 
 1. Ouvrir le projet Supabase qui correspond à la référence configurée.
-2. Exécuter les fichiers de `migrations/` dans l’ordre de leur nom dans le SQL Editor. La migration `202607190007_dynamic_funds_and_due_refresh.sql` ajoute les caisses extensibles et maintient automatiquement les mensualités jusqu’au mois courant.
+2. Exécuter les fichiers de `migrations/` dans l’ordre de leur nom dans le SQL Editor. La migration `202607190007_dynamic_funds_and_due_refresh.sql` ajoute les caisses extensibles. La migration `202607190008_governance_import_and_meeting.sql` ajoute les imports, exceptions, dépenses à double validation, justificatifs privés, audit, mode réunion et cibles de rappels.
 3. Dans **Authentication > URL Configuration**, définir le Site URL sur
    `https://jappo-cotiz.vercel.app` et autoriser
    `https://jappo-cotiz.vercel.app/**` comme Redirect URL.
@@ -41,3 +41,12 @@ Les autres comptes sont automatiquement créés avec le statut `pending`. Dans
 l’application, l’administrateur choisit ensuite **Lecture seule** ou **Lecture +
 saisie**. La base refuse toute consultation des caisses tant que le compte n’est
 pas approuvé, et refuse toute écriture financière au niveau lecture seule.
+
+## Rappels push planifiés
+
+1. Déployer l’Edge Function `send-due-reminders`.
+2. Créer un secret aléatoire fort et l’ajouter aux secrets de la fonction sous le nom `CRON_SECRET`.
+3. Vérifier que `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` et `VAPID_SUBJECT` sont également configurés.
+4. Copier `cron/setup_due_reminders.sql.template`, remplacer `<CRON_SECRET>` et `<PROJECT_URL>`, puis exécuter la copie dans le SQL Editor.
+
+Le modèle utilise Supabase Vault, `pg_cron` et `pg_net`. Le secret n’est jamais enregistré dans Git. Le rappel quotidien est programmé à 08:00 UTC et la table `due_reminder_log` empêche un doublon le même jour.

@@ -12,5 +12,8 @@
   },
   "engines": {
     "node": "22.x"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
   }
 }

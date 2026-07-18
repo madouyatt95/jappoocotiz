@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=12" />
+    <link rel="stylesheet" href="./styles.css?v=13" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -126,6 +126,7 @@
             <div class="cash-grid"><div><small id="cash-in-label">Mes entrées en espèces</small><b id="cash-in">+ 0 €</b></div><div><small>Dépenses</small><b id="cash-out">− 0 €</b></div></div>
           </article>
           <article class="fund-period-card" id="fund-period-card"></article>
+          <button class="meeting-mode-button" type="button" data-action="meeting-mode"><span aria-hidden="true">▥</span><span><strong>Mode réunion familiale</strong><small>Afficher uniquement les totaux, sans noms ni retards individuels</small></span></button>
           <section class="section-block">
             <div class="section-heading"><div><p class="eyebrow">Dernières opérations</p><h2>Mouvements de caisse</h2></div></div>
             <div class="transaction-list" id="transaction-list"></div>
@@ -198,6 +199,10 @@
               <div class="section-heading"><div><p class="eyebrow">Actions autorisées</p><h2 id="quick-actions-title">Mouvements de caisse</h2></div></div>
               <div class="management-action-grid"><button class="primary-btn full" type="button" data-action="record-cash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Ajouter un paiement</button><button class="secondary-btn full" type="button" data-action="record-expense"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M15 8l4 4-4 4"/></svg>Ajouter une dépense</button></div>
             </section>
+            <details class="management-panel" id="pending-expense-section">
+              <summary class="management-summary"><span class="management-icon">✓</span><span><small>Double validation</small><strong>Dépenses à valider</strong></span><span class="count-badge empty" id="pending-expense-count">0</span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content"><p class="section-help">Une dépense importante doit être validée par une autre personne habilitée sur la même caisse.</p><div id="pending-expense-list"></div></div>
+            </details>
             <details class="management-panel">
               <summary class="management-summary"><span class="management-icon">◎</span><span><small>Mensualités</small><strong id="member-status-title">Situation des membres</strong></span><b aria-hidden="true">⌄</b></summary>
               <div class="management-panel-content">
@@ -221,6 +226,25 @@
               </form>
               </div>
             </details>
+            <details class="management-panel hidden" id="member-exception-section">
+              <summary class="management-summary"><span class="management-icon">⏸</span><span><small>Administrateur uniquement</small><strong>Exonérations et suspensions</strong></span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content">
+                <p class="section-help">Appliquez une exonération, une suspension, une reprise ou un départ. Les mois déjà payés restent intacts.</p>
+                <form id="member-exception-form">
+                  <label class="form-field"><span>Membre</span><select id="exception-member" required></select></label>
+                  <label class="form-field"><span>Caisse</span><select id="exception-fund" required></select></label>
+                  <label class="form-field"><span>Décision</span><select id="exception-action" required><option value="exempt">Exonérer une période</option><option value="suspend">Suspendre une période</option><option value="resume">Reprendre les cotisations</option><option value="leave">Arrêter définitivement</option></select></label>
+                  <div class="form-grid"><label class="form-field"><span>Du mois</span><input id="exception-start" type="month" min="2021-01" required /></label><label class="form-field" id="exception-end-field"><span>Au mois inclus</span><input id="exception-end" type="month" min="2021-01" required /></label></div>
+                  <label class="form-field"><span>Motif ou note</span><input id="exception-note" type="text" maxlength="160" placeholder="Facultatif" /></label>
+                  <button class="primary-btn full" type="submit">Appliquer la décision</button>
+                </form>
+                <div class="compact-history" id="member-exception-history"></div>
+              </div>
+            </details>
+            <details class="management-panel hidden" id="payment-import-section">
+              <summary class="management-summary"><span class="management-icon">⇧</span><span><small>Administrateur uniquement</small><strong>Importer l’historique</strong></span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content"><p class="section-help">Importez jusqu’à 2 000 paiements depuis un fichier CSV ou Excel. Un aperçu sera vérifié avant toute écriture.</p><button class="secondary-btn full" type="button" data-action="open-payment-import">Choisir un fichier CSV ou Excel</button></div>
+            </details>
             <details class="management-panel" id="fund-settings-panel">
               <summary class="management-summary"><span class="management-icon">⚙</span><span><small>Administrateur uniquement</small><strong id="fund-settings-title">Configurer les caisses</strong></span><b aria-hidden="true">⌄</b></summary>
               <div class="management-panel-content">
@@ -233,6 +257,10 @@
               <div class="management-panel-content">
               <div id="admin-cash-payments"></div>
               </div>
+            </details>
+            <details class="management-panel hidden" id="admin-audit-section">
+              <summary class="management-summary"><span class="management-icon">◷</span><span><small>Administrateur uniquement</small><strong>Journal administratif</strong></span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content"><p class="section-help">Droits, caisses, périodes, imports, annulations et validations sensibles.</p><div class="admin-audit-list" id="admin-audit-list"></div></div>
             </details>
           </div>
         </section>
@@ -266,7 +294,7 @@
         <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Accès contrôlé</strong><p>Le membre ne peut pas enregistrer lui-même ce paiement.</p></div></div>
         <label class="form-field"><span>1. Membre</span><select id="payment-member" required><option value="">Choisir un membre</option></select></label>
         <div class="form-field"><span>2. Caisse</span><div class="quick-fund-grid" id="quick-fund-grid"></div><select class="visually-hidden" id="payment-contribution" required aria-label="Caisse concernée"></select></div>
-        <div class="quick-payment-summary" id="quick-payment-summary"><span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" disabled>À jour</button></div>
+        <div class="quick-payment-summary" id="quick-payment-summary"><span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" disabled>Régler tous les arriérés</button></div>
         <div class="form-grid"><label class="form-field"><span>3. Montant reçu</span><div class="money-input"><input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /><b>€</b></div></label><label class="form-field"><span>Date</span><input id="payment-date" type="date" required /></label></div>
         <div class="payment-allocation-preview" id="payment-allocation-preview" role="status" aria-live="polite"><span>Affectation automatique</span><strong>Saisissez un montant</strong><small>Les arriérés seront régularisés du mois le plus ancien au plus récent.</small></div>
         <details class="payment-details"><summary>Ajouter une note</summary><label class="form-field"><span>Note facultative</span><input id="payment-note" type="text" maxlength="160" placeholder="Ex. reçu remis au membre" /></label><label class="form-field"><span>Moyen de paiement</span><input id="payment-method" type="text" value="Espèces" readonly /></label></details>
@@ -282,7 +310,10 @@
         <div class="form-field"><span>1. Caisse débitée</span><div class="quick-fund-grid" id="expense-fund-grid"></div><select class="visually-hidden" id="expense-fund" required aria-label="Caisse débitée"></select></div>
         <div class="expense-balance-preview" id="expense-balance-preview"><span>Solde disponible</span><strong>0 €</strong><small>Choisissez une caisse</small></div>
         <div class="form-grid"><label class="form-field"><span>2. Montant dépensé</span><div class="money-input"><input id="expense-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /><b>€</b></div></label><label class="form-field"><span>Date</span><input id="expense-date" type="date" required /></label></div>
+        <div class="form-grid"><label class="form-field"><span>Catégorie</span><select id="expense-category" required><option>Aide familiale</option><option>Santé</option><option>Funérailles</option><option>Événement</option><option>Frais bancaires</option><option>Autre</option></select></label><label class="form-field"><span>Bénéficiaire</span><input id="expense-beneficiary" type="text" maxlength="120" placeholder="Facultatif" /></label></div>
         <label class="form-field"><span>3. Motif</span><textarea id="expense-reason" minlength="3" maxlength="160" required placeholder="Ex. aide médicale, frais bancaires…"></textarea></label>
+        <label class="form-field"><span>Justificatif</span><input id="expense-receipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" /><small>Photo ou PDF facultatif, 5 Mo maximum.</small></label>
+        <div class="notice-card compact-notice hidden" id="expense-approval-notice"><span class="feature-icon soft-amber">2</span><div><strong>Seconde validation requise</strong><p>Cette dépense dépassera le seuil de la caisse et restera en attente.</p></div></div>
         <button class="primary-btn full" type="submit">Enregistrer la dépense</button>
       </form>
     </section>
@@ -296,9 +327,26 @@
         <label class="form-field"><span>Description</span><input id="fund-config-description" type="text" maxlength="160" /></label>
         <div class="form-grid"><label class="form-field"><span>Mensualité</span><div class="money-input"><input id="fund-config-amount" type="number" min="0.01" step="0.01" required /><b>€</b></div></label><label class="form-field"><span>Jour limite</span><input id="fund-config-day" type="number" min="1" max="28" required /></label></div>
         <label class="form-field"><span>Date de début</span><input id="fund-config-start" type="month" required /></label>
+        <label class="form-field"><span>Double validation des dépenses à partir de</span><div class="money-input"><input id="fund-config-threshold" type="number" min="0" step="0.01" value="0" required /><b>€</b></div><small>0 € désactive la double validation.</small></label>
         <div class="notice-card compact-notice"><span class="feature-icon green">✓</span><div><strong>Historique protégé</strong><p>Les mensualités déjà payées conservent leur montant historique. Une nouvelle caisse génère automatiquement les échéances des membres actifs.</p></div></div>
         <button class="primary-btn full" type="submit">Enregistrer la configuration</button>
       </form>
+    </section>
+
+    <section class="bottom-sheet hidden" id="payment-import-sheet" role="dialog" aria-modal="true" aria-labelledby="payment-import-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Administrateur uniquement</p><h2 id="payment-import-title">Importer des paiements</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div class="notice-card compact-notice"><span class="feature-icon green">⇧</span><div><strong>Colonnes attendues</strong><p>Membre, Caisse, Montant, Date et Note (facultative). Les noms doivent correspondre aux fiches et caisses existantes.</p></div></div>
+      <label class="form-field"><span>Fichier CSV ou Excel</span><input id="payment-import-file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>
+      <div class="import-preview" id="payment-import-preview"><p>Sélectionnez un fichier pour afficher l’aperçu.</p></div>
+      <button class="primary-btn full" id="payment-import-submit" type="button" data-action="submit-payment-import" disabled>Importer les paiements vérifiés</button>
+    </section>
+
+    <section class="bottom-sheet meeting-sheet hidden" id="meeting-sheet" role="dialog" aria-modal="true" aria-labelledby="meeting-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Présentation sans données personnelles</p><h2 id="meeting-title">Réunion familiale</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div class="privacy-meeting-banner"><span>◉</span><div><strong>Confidentialité activée</strong><p>Aucun nom, pseudo ou retard individuel n’est affiché.</p></div></div>
+      <div class="meeting-summary-list" id="meeting-summary-list"><div class="empty-state compact-empty"><span>…</span><strong>Chargement des totaux</strong></div></div>
     </section>
 
     <section class="bottom-sheet voice-sheet hidden" id="voice-sheet" role="dialog" aria-modal="true" aria-labelledby="voice-title">
@@ -407,7 +455,8 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
-    <script src="./supabase-client.js?v=10"></script>
-    <script src="./app.js?v=13" defer></script>
+    <script src="./assets/fflate.min.js?v=1"></script>
+    <script src="./supabase-client.js?v=11"></script>
+    <script src="./app.js?v=14" defer></script>
   </body>
 </html>

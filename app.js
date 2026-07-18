@@ -28,6 +28,7 @@ let memberAccessInitialized = false;
 let workspace = null;
 let backendSession = null;
 let syncing = false;
+let paymentImportRows = [];
 
 const statusConfig = {
   unconfigured: { label: "Aucune échéance", tone: "upcoming" },
@@ -110,8 +111,15 @@ function fundExpenses(code) {
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 }
 
+function fundPendingExpenses(code) {
+  const fundId = workspace?.funds?.find((fund) => fund.code === code)?.id;
+  return (workspace?.expenses || [])
+    .filter((expense) => expense.fund_id === fundId && expense.status === "pending")
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+}
+
 function fundBalance(code) {
-  return fundCollected(code) - fundExpenses(code);
+  return fundCollected(code) - fundExpenses(code) - fundPendingExpenses(code);
 }
 
 function totalExpenses() {
@@ -119,8 +127,14 @@ function totalExpenses() {
   return expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 }
 
+function totalPendingExpenses() {
+  return (workspace?.expenses || [])
+    .filter((expense) => expense.status === "pending" && canWriteFund(workspace?.funds?.find((fund) => fund.id === expense.fund_id)?.code))
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+}
+
 function availableTotal() {
-  return totalCollected() - totalExpenses();
+  return totalCollected() - totalExpenses() - totalPendingExpenses();
 }
 
 function personalCollected() {
@@ -309,7 +323,7 @@ function applyWorkspace(nextWorkspace) {
       recordedBy: payment.recorded_by === workspace.user.id ? workspace.membership.full_name : "Responsable habilité"
     };
   });
-  state.expenses = (workspace.expenses || []).map((expense) => {
+  state.expenses = (workspace.expenses || []).filter((expense) => expense.status === "approved").map((expense) => {
     const fund = fundById.get(expense.fund_id);
     return {
       id: expense.id,
@@ -317,6 +331,9 @@ function applyWorkspace(nextWorkspace) {
       contribution: fund?.name || "Caisse",
       amount: Number(expense.amount || 0),
       reason: expense.reason || "Dépense de caisse",
+      category: expense.category || "Autre",
+      beneficiary: expense.beneficiary || "",
+      receiptPath: expense.receipt_path || "",
       date: expense.expense_date,
       dateLabel: formatDate(expense.expense_date),
       createdAt: expense.created_at,
@@ -437,15 +454,16 @@ function renderFundAccount() {
   const fundPayments = state.payments.filter((payment) => payment.contributionId === fund.id);
   const collected = fundCollected(fund.id);
   const spent = fundExpenses(fund.id);
-  const balance = collected - spent;
+  const balance = fundBalance(fund.id);
   const shortcut = document.querySelector("#fund-config-shortcut");
   shortcut.dataset.editFund = fund.id;
   document.querySelector("#fund-config-shortcut-title").textContent = `Paramétrer ${fund.name}`;
   document.querySelector("#cash-balance").textContent = `${formatMoney(canRecordCash() ? balance : collected, 2)} €`;
   document.querySelector("#cash-in").textContent = `+ ${formatMoney(collected)} €`;
   document.querySelector("#cash-out").textContent = canRecordCash() ? `− ${formatMoney(spent)} €` : "Non affiché";
+  const pendingCount = (workspace?.expenses || []).filter((expense) => expense.status === "pending" && expense.fund_id === fund.backendId).length;
   const movementCount = fundPayments.length + state.expenses.filter((expense) => expense.contributionId === fund.id).length;
-  document.querySelector("#cash-updated").textContent = movementCount ? `${movementCount} mouvement${movementCount > 1 ? "s" : ""} enregistré${movementCount > 1 ? "s" : ""}` : "Aucune opération enregistrée";
+  document.querySelector("#cash-updated").textContent = movementCount ? `${movementCount} mouvement${movementCount > 1 ? "s" : ""} enregistré${movementCount > 1 ? "s" : ""}${pendingCount ? ` • ${pendingCount} dépense en attente` : ""}` : "Aucune opération enregistrée";
   document.querySelector("#fund-period-card").innerHTML = `
     <div><span class="contribution-icon ${fund.id === "family" ? "green" : fund.id === "death" ? "indigo" : "orange"}">${iconSVG(fund.icon)}</span><div><small>Caisse sélectionnée</small><strong>${escapeHTML(fund.name)}</strong></div></div>
     <div class="fund-config-facts"><span><small>Mensualité</small><b>${formatMoney(fund.monthlyAmount)} €</b></span><span><small>Depuis</small><b>${formatPeriod(fund.startDate)}</b></span><span><small>Échéance</small><b>Le ${fund.dueDay}</b></span></div>`;
@@ -555,19 +573,15 @@ function renderMemberAccess() {
     const protectedAdmin = member.role === "admin" && member.approval_status === "approved";
     const status = pending ? "En attente de validation" : rejected ? "Accès refusé" : accessLabel(member);
     const identity = member.pseudo ? `${member.full_name} • @${member.pseudo}` : member.full_name;
-    const memberCodes = writableFundCodes(member).slice().sort().join(",");
-    const activeFundCodes = (workspace.funds || []).map((fund) => fund.code).sort();
-    const fundAccessButtons = (workspace.funds || []).map((fund) => {
-      const onlyThisFund = memberCodes === fund.code;
-      return `<button class="${!pending && !rejected && member.access_level === "write" && onlyThisFund ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="${escapeHTML(fund.code)}">${escapeHTML(fund.name)}</button>`;
-    }).join("");
-    const allCodes = activeFundCodes.join(",");
+    const memberCodes = writableFundCodes(member);
+    const fundChoices = (workspace.funds || []).map((fund) => `
+      <label class="fund-access-check"><input type="checkbox" value="${escapeHTML(fund.code)}" ${memberCodes.includes(fund.code) ? "checked" : ""} /><span>${escapeHTML(fund.name)}</span></label>`).join("");
     const controls = protectedAdmin
       ? `<span class="protected-access">Écriture permanente sur ${workspace.funds.length} caisse${workspace.funds.length > 1 ? "s" : ""}</span>`
       : `<div class="access-choice" role="group" aria-label="Droits de ${escapeHTML(member.full_name)}">
           <button class="${!pending && !rejected && member.access_level === "read" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="read" data-write-funds="">Lecture seule</button>
-          ${fundAccessButtons}
-          ${workspace.funds.length > 1 ? `<button class="${!pending && !rejected && member.access_level === "write" && memberCodes === allCodes ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="${escapeHTML(allCodes)}">Toutes les caisses</button>` : ""}
+          <div class="fund-access-list">${fundChoices}</div>
+          <button class="${!pending && !rejected && member.access_level === "write" ? "active" : ""}" type="button" data-save-fund-access="${member.id}">Enregistrer les caisses sélectionnées</button>
         </div>
         ${!pending && !rejected && member.pseudo ? `<button class="reset-code-button" type="button" data-reset-member-code="${member.id}">Créer un nouveau code</button>` : ""}
         ${pending ? `<button class="reject-access" type="button" data-reject-member="${member.id}">Refuser</button>` : ""}`;
@@ -596,6 +610,186 @@ function renderFundSettings() {
       <div><strong>${escapeHTML(fund.name)}</strong><small>${formatMoney(Number(fund.monthly_amount))} € / mois • depuis ${formatPeriod(fund.start_date)}</small></div>
       ${workspace.membership.role === "admin" ? `<button type="button" data-edit-fund="${escapeHTML(fund.code)}" aria-label="Modifier ${escapeHTML(fund.name)}">Modifier</button>` : ""}
     </article>`).join("");
+}
+
+function renderPendingExpenses() {
+  const section = document.querySelector("#pending-expense-section");
+  const container = document.querySelector("#pending-expense-list");
+  const expenses = (workspace?.expenses || []).filter((expense) => expense.status === "pending" && canWriteFund(workspace?.funds?.find((fund) => fund.id === expense.fund_id)?.code));
+  section.classList.toggle("hidden", !canRecordCash());
+  document.querySelector("#pending-expense-count").textContent = String(expenses.length);
+  document.querySelector("#pending-expense-count").classList.toggle("empty", expenses.length === 0);
+  if (!canRecordCash()) return container.innerHTML = "";
+  if (!expenses.length) {
+    container.innerHTML = '<div class="empty-state compact-empty"><span>✓</span><strong>Aucune dépense en attente</strong></div>';
+    return;
+  }
+  container.innerHTML = expenses.map((expense) => {
+    const fund = workspace.funds.find((item) => item.id === expense.fund_id);
+    const ownExpense = expense.spent_by === workspace.user.id;
+    return `<article class="pending-expense-card">
+      <div><strong>${formatMoney(Number(expense.amount))} € • ${escapeHTML(fund?.name || "Caisse")}</strong><small>${escapeHTML(expense.category || "Autre")} • ${escapeHTML(expense.reason)}${expense.beneficiary ? ` • ${escapeHTML(expense.beneficiary)}` : ""}<br>${formatDate(expense.expense_date)}</small></div>
+      ${expense.receipt_path ? `<button type="button" data-expense-receipt="${escapeHTML(expense.receipt_path)}">Voir le justificatif</button>` : ""}
+      <div class="expense-review-actions"><button type="button" data-review-expense="${expense.id}" data-expense-decision="approve" ${ownExpense ? "disabled" : ""}>Valider</button><button class="reject" type="button" data-review-expense="${expense.id}" data-expense-decision="reject" ${ownExpense ? "disabled" : ""}>Refuser</button></div>
+      ${ownExpense ? "<em>Une autre personne habilitée doit décider.</em>" : ""}
+    </article>`;
+  }).join("");
+}
+
+function renderMemberExceptions() {
+  const section = document.querySelector("#member-exception-section");
+  section.classList.toggle("hidden", !isAdministrator());
+  if (!isAdministrator()) return;
+  document.querySelector("#exception-start").max = currentMonthValue();
+  document.querySelector("#exception-end").max = currentMonthValue();
+  if (!document.querySelector("#exception-start").value) document.querySelector("#exception-start").value = currentMonthValue();
+  if (!document.querySelector("#exception-end").value) document.querySelector("#exception-end").value = currentMonthValue();
+  const memberSelect = document.querySelector("#exception-member");
+  const fundSelect = document.querySelector("#exception-fund");
+  const previousMember = memberSelect.value;
+  const previousFund = fundSelect.value;
+  memberSelect.innerHTML = approvedMembers().map((member) => `<option value="${member.id}">${escapeHTML(member.full_name)}</option>`).join("");
+  fundSelect.innerHTML = workspace.funds.map((fund) => `<option value="${fund.id}">${escapeHTML(fund.name)}</option>`).join("");
+  if (approvedMembers().some((member) => member.id === previousMember)) memberSelect.value = previousMember;
+  if (workspace.funds.some((fund) => fund.id === previousFund)) fundSelect.value = previousFund;
+  const names = new Map(approvedMembers().map((member) => [member.id, member.full_name]));
+  const funds = new Map(workspace.funds.map((fund) => [fund.id, fund.name]));
+  const history = (workspace.exceptions || []).slice(0, 8);
+  document.querySelector("#member-exception-history").innerHTML = history.length
+    ? `<h3>Décisions récentes</h3>${history.map((item) => `<article><strong>${escapeHTML(names.get(item.member_id) || "Membre")} • ${escapeHTML(funds.get(item.fund_id) || "Caisse")}</strong><small>${escapeHTML(({ exempt: "Exonération", suspend: "Suspension", resume: "Reprise", leave: "Départ" })[item.action] || item.action)} • ${formatPeriod(item.start_month)}${item.end_month && item.end_month !== item.start_month ? ` à ${formatPeriod(item.end_month)}` : ""}${item.note ? `<br>${escapeHTML(item.note)}` : ""}</small></article>`).join("")}`
+    : '<p class="section-help">Aucune exception enregistrée.</p>';
+}
+
+function renderAdminAudit() {
+  const section = document.querySelector("#admin-audit-section");
+  const container = document.querySelector("#admin-audit-list");
+  section.classList.toggle("hidden", !isAdministrator());
+  document.querySelector("#payment-import-section").classList.toggle("hidden", !isAdministrator());
+  if (!isAdministrator()) return container.innerHTML = "";
+  const events = workspace.adminActivity || [];
+  container.innerHTML = events.length
+    ? events.slice(0, 30).map((event) => `<article><span>◷</span><div><strong>${escapeHTML(event.summary)}</strong><small>${escapeHTML(event.actor_name || "Système")} • ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.created_at))}</small></div></article>`).join("")
+    : '<div class="empty-state compact-empty"><span>◷</span><strong>Le journal est prêt</strong><p>Les prochaines actions administratives apparaîtront ici.</p></div>';
+}
+
+function normalizeLookup(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("fr");
+}
+
+function parseDelimitedLine(line, delimiter) {
+  const values = [];
+  let value = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"' && quoted && line[index + 1] === '"') { value += '"'; index += 1; }
+    else if (character === '"') quoted = !quoted;
+    else if (character === delimiter && !quoted) { values.push(value.trim()); value = ""; }
+    else value += character;
+  }
+  values.push(value.trim());
+  return values;
+}
+
+function rowsFromCSV(text) {
+  const lines = String(text).replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
+  const delimiter = (lines[0]?.match(/;/g) || []).length > (lines[0]?.match(/,/g) || []).length ? ";" : ",";
+  return lines.map((line) => parseDelimitedLine(line, delimiter));
+}
+
+function excelColumnIndex(reference) {
+  const letters = String(reference).match(/^[A-Z]+/i)?.[0]?.toUpperCase() || "A";
+  return [...letters].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+}
+
+function rowsFromXLSX(buffer) {
+  if (!window.fflate?.unzipSync) throw new Error("Le lecteur Excel n’est pas disponible.");
+  const archive = window.fflate.unzipSync(new Uint8Array(buffer));
+  const decoder = new TextDecoder();
+  const worksheetBytes = archive["xl/worksheets/sheet1.xml"];
+  if (!worksheetBytes) throw new Error("La première feuille Excel est introuvable.");
+  const sharedDocument = archive["xl/sharedStrings.xml"] ? new DOMParser().parseFromString(decoder.decode(archive["xl/sharedStrings.xml"]), "application/xml") : null;
+  const sharedStrings = sharedDocument ? [...sharedDocument.getElementsByTagName("si")].map((item) => [...item.getElementsByTagName("t")].map((node) => node.textContent || "").join("")) : [];
+  const worksheet = new DOMParser().parseFromString(decoder.decode(worksheetBytes), "application/xml");
+  return [...worksheet.getElementsByTagName("row")].map((row) => {
+    const values = [];
+    [...row.getElementsByTagName("c")].forEach((cell) => {
+      const index = excelColumnIndex(cell.getAttribute("r"));
+      const raw = cell.getElementsByTagName("v")[0]?.textContent || cell.getElementsByTagName("t")[0]?.textContent || "";
+      values[index] = cell.getAttribute("t") === "s" ? sharedStrings[Number(raw)] || "" : raw;
+    });
+    return values.map((value) => value ?? "");
+  });
+}
+
+function normalizeImportDate(value) {
+  const text = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  if (/^\d{2}[\/.\-]\d{2}[\/.\-]\d{4}$/.test(text)) {
+    const [day, month, year] = text.split(/[\/.\-]/);
+    return `${year}-${month}-${day}`;
+  }
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const date = new Date(Date.UTC(1899, 11, 30) + Number(text) * 86400000);
+    return date.toISOString().slice(0, 10);
+  }
+  return "";
+}
+
+function prepareImportRows(table) {
+  if (table.length < 2) throw new Error("Le fichier ne contient aucun paiement.");
+  if (table.length > 2001) throw new Error("Maximum 2 000 paiements par import.");
+  const headers = table[0].map(normalizeLookup);
+  const column = (names) => headers.findIndex((header) => names.includes(header));
+  const memberColumn = column(["membre", "nom", "nom du membre", "pseudo"]);
+  const fundColumn = column(["caisse", "fonds", "nom de la caisse"]);
+  const amountColumn = column(["montant", "montant paye", "somme"]);
+  const dateColumn = column(["date", "date de paiement"]);
+  const noteColumn = column(["note", "commentaire", "motif"]);
+  if ([memberColumn, fundColumn, amountColumn, dateColumn].some((index) => index < 0)) throw new Error("Colonnes obligatoires : Membre, Caisse, Montant et Date.");
+
+  const memberMap = new Map();
+  approvedMembers().forEach((member) => {
+    [member.full_name, member.pseudo].filter(Boolean).forEach((name) => {
+      const key = normalizeLookup(name);
+      memberMap.set(key, memberMap.has(key) ? null : member);
+    });
+  });
+  const fundMap = new Map();
+  workspace.funds.forEach((fund) => [fund.name, fund.code].forEach((name) => fundMap.set(normalizeLookup(name), fund)));
+  const today = new Date().toISOString().slice(0, 10);
+  const totals = new Map();
+  const rows = table.slice(1).filter((row) => row.some((value) => String(value || "").trim())).map((row, index) => {
+    const member = memberMap.get(normalizeLookup(row[memberColumn]));
+    const fund = fundMap.get(normalizeLookup(row[fundColumn]));
+    const amount = Number(String(row[amountColumn] || "").replace(/\s/g, "").replace(",", "."));
+    const paymentDate = normalizeImportDate(row[dateColumn]);
+    const errors = [];
+    if (!member) errors.push("membre introuvable ou ambigu");
+    if (!fund) errors.push("caisse introuvable");
+    if (!Number.isFinite(amount) || amount <= 0) errors.push("montant invalide");
+    if (!paymentDate || paymentDate > today) errors.push("date invalide");
+    if (member && fund && Number.isFinite(amount)) {
+      const key = `${member.id}:${fund.id}`;
+      totals.set(key, Number(totals.get(key) || 0) + amount);
+    }
+    return { rowNumber: index + 2, member, fund, amount, paymentDate, note: noteColumn >= 0 ? String(row[noteColumn] || "").slice(0, 160) : "", errors };
+  });
+  rows.forEach((row) => {
+    if (!row.member || !row.fund) return;
+    const key = `${row.member.id}:${row.fund.id}`;
+    if (Number(totals.get(key)) > fundSituation(row.member.id, row.fund.id).outstanding + 0.001) row.errors.push("total supérieur aux arriérés");
+  });
+  return rows.sort((a, b) => a.paymentDate.localeCompare(b.paymentDate) || a.rowNumber - b.rowNumber);
+}
+
+function renderPaymentImportPreview() {
+  const container = document.querySelector("#payment-import-preview");
+  const button = document.querySelector("#payment-import-submit");
+  const errors = paymentImportRows.filter((row) => row.errors.length);
+  button.disabled = !paymentImportRows.length || errors.length > 0;
+  if (!paymentImportRows.length) return container.innerHTML = "<p>Sélectionnez un fichier pour afficher l’aperçu.</p>";
+  container.innerHTML = `<div class="import-result ${errors.length ? "invalid" : "valid"}"><strong>${paymentImportRows.length} ligne${paymentImportRows.length > 1 ? "s" : ""} • ${errors.length ? `${errors.length} à corriger` : "prêtes à importer"}</strong><small>${errors.length ? "Aucune donnée ne sera écrite tant que le fichier contient une erreur." : "L’import sera effectué en une seule opération sécurisée."}</small></div><div class="import-table">${paymentImportRows.slice(0, 12).map((row) => `<article class="${row.errors.length ? "invalid" : ""}"><span>Ligne ${row.rowNumber}</span><strong>${escapeHTML(row.member?.full_name || "Membre inconnu")} • ${escapeHTML(row.fund?.name || "Caisse inconnue")}</strong><small>${formatMoney(row.amount || 0)} € • ${row.paymentDate || "date invalide"}${row.errors.length ? `<br>${escapeHTML(row.errors.join(", "))}` : ""}</small></article>`).join("")}</div>${paymentImportRows.length > 12 ? `<p>${paymentImportRows.length - 12} ligne(s) supplémentaire(s) vérifiée(s).</p>` : ""}`;
 }
 
 function renderPaymentOptions() {
@@ -646,6 +840,8 @@ function updateExpenseBalancePreview() {
   const remaining = balance - (Number.isFinite(amount) ? amount : 0);
   if (Number.isFinite(amount) && amount > balance + 0.001) preview.classList.add("error");
   preview.innerHTML = `<span>Solde disponible • ${escapeHTML(fund.name)}</span><strong>${formatMoney(balance)} €</strong><small>${Number.isFinite(amount) && amount > 0 ? `Solde après dépense : ${formatMoney(remaining)} €` : "Le serveur empêchera toute dépense supérieure au solde."}</small>`;
+  const threshold = Number(workspace?.funds?.find((item) => item.code === code)?.expense_approval_threshold || 0);
+  document.querySelector("#expense-approval-notice")?.classList.toggle("hidden", !(threshold > 0 && Number.isFinite(amount) && amount >= threshold));
 }
 
 function currentMonthValue() {
@@ -788,8 +984,8 @@ function updateQuickPaymentSummary({ clearAmount = false } = {}) {
   const situation = memberId && fund ? fundSituation(memberId, fund.id) : null;
   if (clearAmount) document.querySelector("#payment-amount").value = "";
   summary.innerHTML = situation
-    ? `<span>Arriérés de cette caisse</span><strong>${formatMoney(situation.outstanding)} €</strong><small>${situation.missingMonths} mensualité${situation.missingMonths === 1 ? "" : "s"} à régulariser • ${formatMoney(Number(fund.monthly_amount))} € / mois</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" ${situation.outstanding > 0 ? "" : "disabled"}>${situation.outstanding > 0 ? `À jour • ${formatMoney(situation.outstanding)} €` : "Déjà à jour"}</button>`
-    : '<span>Arriérés de cette caisse</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" disabled>À jour</button>';
+    ? `<span>Arriérés de cette caisse</span><strong>${formatMoney(situation.outstanding)} €</strong><small>${situation.missingMonths} mensualité${situation.missingMonths === 1 ? "" : "s"} à régulariser • ${formatMoney(Number(fund.monthly_amount))} € / mois</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" ${situation.outstanding > 0 ? "" : "disabled"}>${situation.outstanding > 0 ? `Régler tous les arriérés • ${formatMoney(situation.outstanding)} €` : "Déjà à jour"}</button>`
+    : '<span>Arriérés de cette caisse</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small><button class="settle-arrears-button" id="settle-arrears-button" type="button" data-action="settle-arrears" disabled>Régler tous les arriérés</button>';
   updatePaymentAllocationPreview();
 }
 
@@ -899,6 +1095,9 @@ function renderAll() {
   renderMemberAccess();
   renderMemberStatuses();
   renderFundSettings();
+  renderPendingExpenses();
+  renderMemberExceptions();
+  renderAdminAudit();
   renderPaymentOptions();
   renderExpenseOptions();
   renderScheduleOptions();
@@ -1050,6 +1249,9 @@ function openExpense() {
   if (preferredFund) document.querySelector("#expense-fund").value = preferredFund;
   document.querySelector("#expense-amount").value = "";
   document.querySelector("#expense-reason").value = "";
+  document.querySelector("#expense-beneficiary").value = "";
+  document.querySelector("#expense-category").value = "Aide familiale";
+  document.querySelector("#expense-receipt").value = "";
   setDefaultPaymentDates();
   renderExpenseOptions();
   openSheet("expense-sheet");
@@ -1065,6 +1267,7 @@ function openFundConfig(code) {
   document.querySelector("#fund-config-amount").value = Number(fund.monthly_amount).toFixed(2);
   document.querySelector("#fund-config-day").value = fund.due_day;
   document.querySelector("#fund-config-start").value = String(fund.start_date).slice(0, 7);
+  document.querySelector("#fund-config-threshold").value = Number(fund.expense_approval_threshold || 0).toFixed(2);
   document.querySelector("#fund-config-title").textContent = `Configurer ${fund.name}`;
   document.querySelector('#fund-config-form button[type="submit"]').textContent = "Enregistrer la configuration";
   openSheet("fund-config-sheet");
@@ -1077,6 +1280,7 @@ function openCreateFund() {
   document.querySelector("#fund-config-amount").value = "5.00";
   document.querySelector("#fund-config-day").value = "10";
   document.querySelector("#fund-config-start").value = currentMonthValue();
+  document.querySelector("#fund-config-threshold").value = "0.00";
   document.querySelector("#fund-config-title").textContent = "Ajouter une caisse";
   document.querySelector('#fund-config-form button[type="submit"]').textContent = "Créer la caisse";
   openSheet("fund-config-sheet");
@@ -1097,8 +1301,15 @@ async function submitFundConfiguration(event) {
       p_start_date: `${document.querySelector("#fund-config-start").value}-01`,
       p_due_day: Number(document.querySelector("#fund-config-day").value)
     };
-    if (fundId) await window.JappoBackend.configureFund({ p_fund_id: fundId, ...configuration });
-    else await window.JappoBackend.createFund(configuration);
+    if (fundId) {
+      await window.JappoBackend.configureFund({ p_fund_id: fundId, ...configuration });
+      await window.JappoBackend.setFundExpenseThreshold(fundId, Number(document.querySelector("#fund-config-threshold").value));
+    } else {
+      const created = await window.JappoBackend.createFund(configuration);
+      const createdFund = Array.isArray(created) ? created[0] : created;
+      const threshold = Number(document.querySelector("#fund-config-threshold").value);
+      if (createdFund?.id && threshold > 0) await window.JappoBackend.setFundExpenseThreshold(createdFund.id, threshold);
+    }
     await syncFromBackend({ quiet: true });
     closeSheets();
     showToast(fundId ? "Configuration enregistrée et mensualités recalculées." : "Nouvelle caisse créée et mensualités générées.");
@@ -1137,6 +1348,132 @@ async function reviewMemberAccess(memberId, decision, level, writeFunds, trigger
   } catch (error) {
     showToast(error.message || "Les droits n’ont pas pu être modifiés.");
     card?.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+  }
+}
+
+function saveSelectedFundAccess(memberId, trigger) {
+  const card = trigger.closest(".access-member-card");
+  const selected = [...card.querySelectorAll('.fund-access-check input:checked')].map((input) => input.value);
+  if (!selected.length) return showToast("Choisissez au moins une caisse, ou utilisez Lecture seule.");
+  return reviewMemberAccess(memberId, "approve", "write", selected, trigger);
+}
+
+async function reviewExpense(expenseId, decision, trigger) {
+  if (!canRecordCash()) return showToast("Autorisation insuffisante.");
+  const note = decision === "reject" ? window.prompt("Motif du refus (facultatif)", "") : "";
+  if (decision === "reject" && note === null) return;
+  trigger.closest(".pending-expense-card")?.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  try {
+    await window.JappoBackend.reviewCashExpense(expenseId, decision, note || null);
+    await syncFromBackend({ quiet: true });
+    showToast(decision === "approve" ? "Dépense validée et débitée de la caisse." : "Dépense refusée. Le montant réservé est libéré.");
+  } catch (error) {
+    showToast(error.message || "La décision n’a pas pu être enregistrée.");
+  }
+}
+
+async function openExpenseReceipt(path) {
+  try {
+    const url = await window.JappoBackend.createExpenseReceiptUrl(path);
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch (error) {
+    showToast(error.message || "Le justificatif n’est pas disponible.");
+  }
+}
+
+async function submitMemberException(event) {
+  event.preventDefault();
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
+  const action = document.querySelector("#exception-action").value;
+  const start = document.querySelector("#exception-start").value;
+  const end = action === "leave" ? null : document.querySelector("#exception-end").value;
+  if (!start || (action !== "leave" && !end) || (end && start > end)) return showToast("Choisissez une période valide.");
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = "Application…";
+  try {
+    await window.JappoBackend.setMemberFundException({
+      p_member_id: document.querySelector("#exception-member").value,
+      p_fund_id: document.querySelector("#exception-fund").value,
+      p_action: action,
+      p_start_month: `${start}-01`,
+      p_end_month: end ? `${end}-01` : null,
+      p_note: document.querySelector("#exception-note").value.trim() || null
+    });
+    await syncFromBackend({ quiet: true });
+    event.target.reset();
+    document.querySelector("#exception-end-field").classList.remove("hidden");
+    showToast("Décision appliquée. Les mois déjà payés sont conservés.");
+  } catch (error) {
+    showToast(error.message || "La décision n’a pas pu être appliquée.");
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Appliquer la décision";
+  }
+}
+
+function openPaymentImport() {
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
+  paymentImportRows = [];
+  document.querySelector("#payment-import-file").value = "";
+  renderPaymentImportPreview();
+  openSheet("payment-import-sheet");
+}
+
+async function readPaymentImportFile(event) {
+  const file = event.target.files?.[0];
+  paymentImportRows = [];
+  if (!file) return renderPaymentImportPreview();
+  if (file.size > 5 * 1024 * 1024) return showToast("Le fichier doit peser moins de 5 Mo.");
+  const container = document.querySelector("#payment-import-preview");
+  container.innerHTML = "<p>Lecture et vérification du fichier…</p>";
+  try {
+    const table = file.name.toLowerCase().endsWith(".xlsx") ? rowsFromXLSX(await file.arrayBuffer()) : rowsFromCSV(await file.text());
+    paymentImportRows = prepareImportRows(table);
+    renderPaymentImportPreview();
+  } catch (error) {
+    paymentImportRows = [];
+    renderPaymentImportPreview();
+    showToast(error.message || "Le fichier n’a pas pu être lu.");
+  }
+}
+
+async function submitPaymentImport() {
+  if (!isAdministrator() || !paymentImportRows.length || paymentImportRows.some((row) => row.errors.length)) return;
+  const button = document.querySelector("#payment-import-submit");
+  button.disabled = true;
+  button.textContent = "Import sécurisé en cours…";
+  try {
+    const rows = paymentImportRows.map((row) => ({
+      family_id: workspace.membership.family_id,
+      member_id: row.member.id,
+      fund_id: row.fund.id,
+      amount: row.amount,
+      payment_date: row.paymentDate,
+      note: row.note || null
+    }));
+    const result = await window.JappoBackend.importCashPayments(workspace.membership.family_id, rows);
+    await syncFromBackend({ quiet: true });
+    closeSheets();
+    showToast(`${result?.imported || rows.length} paiement(s) historique(s) importé(s).`);
+  } catch (error) {
+    showToast(error.message || "L’import a été annulé sans modifier les données.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Importer les paiements vérifiés";
+  }
+}
+
+async function openMeetingMode() {
+  if (!backendSession || !workspace?.membership?.active) return showToast("Connectez-vous d’abord à votre fiche.");
+  openSheet("meeting-sheet");
+  const container = document.querySelector("#meeting-summary-list");
+  container.innerHTML = '<div class="empty-state compact-empty"><span>…</span><strong>Calcul des totaux</strong></div>';
+  try {
+    const funds = await window.JappoBackend.getMeetingSummary(workspace.membership.family_id);
+    container.innerHTML = funds.map((fund) => `<article class="meeting-fund-card"><div><small>${escapeHTML(fund.fund_name)}</small><strong>${formatMoney(Number(fund.balance))} €</strong><span>Solde disponible</span></div><dl><div><dt>Attendu</dt><dd>${formatMoney(Number(fund.total_expected))} €</dd></div><div><dt>Collecté</dt><dd>${formatMoney(Number(fund.total_collected))} €</dd></div><div><dt>Dépensé</dt><dd>${formatMoney(Number(fund.total_expenses))} €</dd></div><div><dt>Membres à jour</dt><dd>${fund.up_to_date_count}/${fund.member_count}</dd></div></dl></article>`).join("") || '<div class="empty-state compact-empty"><span>₣</span><strong>Aucune caisse active</strong></div>';
+  } catch (error) {
+    container.innerHTML = `<div class="empty-state compact-empty"><span>!</span><strong>Totaux indisponibles</strong><p>${escapeHTML(error.message || "Réessayez plus tard.")}</p></div>`;
   }
 }
 
@@ -1350,6 +1687,9 @@ async function recordCashExpense(event) {
   const amount = Number(document.querySelector("#expense-amount").value);
   const dateValue = document.querySelector("#expense-date").value;
   const reason = document.querySelector("#expense-reason").value.trim();
+  const beneficiary = document.querySelector("#expense-beneficiary").value.trim();
+  const category = document.querySelector("#expense-category").value;
+  const receipt = document.querySelector("#expense-receipt").files?.[0] || null;
   if (!contribution?.backendId || !canWriteFund(contributionId) || !Number.isFinite(amount) || amount <= 0 || !dateValue || reason.length < 3) {
     return showToast("Vérifiez la caisse, le montant, la date et le motif.");
   }
@@ -1358,20 +1698,33 @@ async function recordCashExpense(event) {
   const submit = event.target.querySelector('button[type="submit"]');
   submit.disabled = true;
   submit.textContent = "Enregistrement sécurisé…";
+  let receiptPath = null;
   try {
-    await window.JappoBackend.recordCashExpense({
+    if (receipt) {
+      submit.textContent = "Envoi du justificatif…";
+      receiptPath = await window.JappoBackend.uploadExpenseReceipt(workspace.membership.family_id, contribution.backendId, receipt);
+    }
+    submit.textContent = "Enregistrement sécurisé…";
+    const recorded = await window.JappoBackend.recordCashExpense({
       p_family_id: workspace.membership.family_id,
       p_fund_id: contribution.backendId,
       p_amount: amount,
       p_expense_date: dateValue,
-      p_reason: reason
+      p_reason: reason,
+      p_beneficiary: beneficiary || null,
+      p_category: category,
+      p_receipt_path: receiptPath
     });
+    const expense = Array.isArray(recorded) ? recorded[0] : recorded;
     await syncFromBackend({ quiet: true });
     event.target.reset();
     setDefaultPaymentDates();
     closeSheets();
-    showToast(`Dépense de ${formatMoney(amount)} € enregistrée dans ${contribution.name}.`);
+    showToast(expense?.status === "pending"
+      ? `Dépense de ${formatMoney(amount)} € réservée, en attente d’une seconde validation.`
+      : `Dépense de ${formatMoney(amount)} € enregistrée dans ${contribution.name}.`);
   } catch (error) {
+    if (receiptPath) await window.JappoBackend.removeExpenseReceipt(receiptPath).catch(() => null);
     showToast(error.message || "La dépense n’a pas pu être enregistrée.");
   } finally {
     submit.disabled = false;
@@ -1707,6 +2060,9 @@ function handleAction(action) {
   if (action === "record-expense") return openExpense();
   if (action === "settle-arrears") return settlePaymentArrears();
   if (action === "create-fund") return openCreateFund();
+  if (action === "meeting-mode") return openMeetingMode();
+  if (action === "open-payment-import") return openPaymentImport();
+  if (action === "submit-payment-import") return submitPaymentImport();
   if (action === "send-login-link") return sendLoginLink();
   if (action === "copy-member-code") return copyMemberCode();
   if (action === "auth-or-signout") return authOrSignOut();
@@ -1782,6 +2138,8 @@ function setupEvents() {
     }
     const editFundButton = event.target.closest("[data-edit-fund]");
     if (editFundButton) return openFundConfig(editFundButton.dataset.editFund);
+    const saveFundAccessButton = event.target.closest("[data-save-fund-access]");
+    if (saveFundAccessButton) return saveSelectedFundAccess(saveFundAccessButton.dataset.saveFundAccess, saveFundAccessButton);
     const reviewMemberButton = event.target.closest("[data-review-member]");
     if (reviewMemberButton) return reviewMemberAccess(
       reviewMemberButton.dataset.reviewMember,
@@ -1804,6 +2162,10 @@ function setupEvents() {
     if (deleteMemberButton) return openDeleteMember(deleteMemberButton.dataset.deleteMember);
     const reversePaymentButton = event.target.closest("[data-reverse-payment]");
     if (reversePaymentButton) return openReversePayment(reversePaymentButton.dataset.reversePayment);
+    const reviewExpenseButton = event.target.closest("[data-review-expense]");
+    if (reviewExpenseButton) return reviewExpense(reviewExpenseButton.dataset.reviewExpense, reviewExpenseButton.dataset.expenseDecision, reviewExpenseButton);
+    const receiptButton = event.target.closest("[data-expense-receipt]");
+    if (receiptButton) return openExpenseReceipt(receiptButton.dataset.expenseReceipt);
     const actionButton = event.target.closest("[data-action]");
     if (actionButton) return handleAction(actionButton.dataset.action);
     const voiceButton = event.target.closest("[data-voice-command]");
@@ -1821,6 +2183,7 @@ function setupEvents() {
   document.querySelector("#delete-member-form").addEventListener("submit", deleteFamilyMember);
   document.querySelector("#fund-config-form").addEventListener("submit", submitFundConfiguration);
   document.querySelector("#member-schedule-form").addEventListener("submit", submitMemberSchedule);
+  document.querySelector("#member-exception-form").addEventListener("submit", submitMemberException);
   document.querySelector("#admin-password-form").addEventListener("submit", submitAdminPassword);
   document.querySelector("#admin-auth-form").addEventListener("submit", submitAuth);
   document.querySelector("#member-login-form").addEventListener("submit", submitMemberLogin);
@@ -1830,6 +2193,12 @@ function setupEvents() {
   document.querySelector("#payment-amount").addEventListener("input", updatePaymentAllocationPreview);
   document.querySelector("#expense-fund").addEventListener("change", updateExpenseBalancePreview);
   document.querySelector("#expense-amount").addEventListener("input", updateExpenseBalancePreview);
+  document.querySelector("#payment-import-file").addEventListener("change", readPaymentImportFile);
+  document.querySelector("#exception-action").addEventListener("change", (event) => {
+    const departure = event.target.value === "leave";
+    document.querySelector("#exception-end-field").classList.toggle("hidden", departure);
+    document.querySelector("#exception-end").required = !departure;
+  });
   document.querySelector("#member-access-search").addEventListener("input", (event) => {
     memberAccessSearch = event.target.value;
     memberAccessInitialized = true;

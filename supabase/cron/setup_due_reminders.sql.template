@@ -1,0 +1,22 @@
+-- À exécuter une seule fois après avoir remplacé les deux valeurs entre <...>.
+-- Le secret doit être identique au secret CRON_SECRET de l'Edge Function.
+-- Documentation officielle : https://supabase.com/docs/guides/functions/schedule-functions
+
+select vault.create_secret('<CRON_SECRET>', 'jappo_due_reminder_cron_secret');
+select vault.create_secret('<PROJECT_URL>', 'jappo_project_url');
+
+select cron.schedule(
+  'jappo-due-reminders-daily',
+  '0 8 * * *',
+  $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'jappo_project_url')
+      || '/functions/v1/send-due-reminders',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'jappo_due_reminder_cron_secret')
+    ),
+    body := '{"scheduled":true}'::jsonb
+  );
+  $$
+);
