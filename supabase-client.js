@@ -159,17 +159,22 @@
     if (!user) return null;
 
     const memberships = await query("family_members", {
-      select: "id,family_id,user_id,full_name,role,active",
+      select: "id,family_id,user_id,full_name,role,active,approval_status,access_level,created_at,reviewed_at",
       user_id: `eq.${user.id}`,
-      active: "eq.true",
       limit: "1"
     });
     const membership = memberships[0] || null;
-    if (!membership) return { user, membership: null, family: null, funds: [], periods: [], payments: [], members: [] };
+    if (!membership) return { user, membership: null, family: null, funds: [], periods: [], payments: [], activityPayments: [], members: [] };
+
+    const approved = membership.active && membership.approval_status === "approved";
+    if (!approved) {
+      return { user, membership, family: null, funds: [], periods: [], payments: [], activityPayments: [], members: [membership] };
+    }
 
     const familyId = membership.family_id;
-    const authorized = ["admin", "treasurer", "cash_collector"].includes(membership.role);
-    const [families, funds, periods, payments, members] = await Promise.all([
+    const authorized = membership.access_level === "write" && ["admin", "treasurer", "cash_collector"].includes(membership.role);
+    const administrator = authorized && membership.role === "admin";
+    const [families, funds, periods, payments, activityPayments, members] = await Promise.all([
       query("family_spaces", { select: "id,name,currency", id: `eq.${familyId}`, limit: "1" }),
       query("funds", { select: "id,code,name,description,monthly_amount,frequency,start_date,due_day,display_order,active", family_id: `eq.${familyId}`, active: "eq.true", order: "display_order.asc" }),
       query("contribution_periods", {
@@ -183,8 +188,14 @@
         reversed_at: "is.null",
         order: "payment_date.desc,created_at.desc"
       }),
+      callRpc("list_payment_activity", { p_family_id: familyId }),
       authorized
-        ? query("family_members", { select: "id,full_name,user_id,role", family_id: `eq.${familyId}`, active: "eq.true", order: "full_name.asc" })
+        ? query("family_members", {
+          select: "id,full_name,user_id,role,active,approval_status,access_level,created_at,reviewed_at",
+          family_id: `eq.${familyId}`,
+          ...(administrator ? {} : { active: "eq.true", approval_status: "eq.approved" }),
+          order: "created_at.desc"
+        })
         : Promise.resolve([membership])
     ]);
 
@@ -195,6 +206,7 @@
       funds,
       periods,
       payments,
+      activityPayments,
       members
     };
   }
@@ -214,6 +226,10 @@
     return callRpc("configure_fund", configuration);
   }
 
+  async function reviewMemberAccess(review) {
+    return callRpc("review_member_access", review);
+  }
+
   global.JappoBackend = Object.freeze({
     configured,
     initializeSession,
@@ -222,6 +238,7 @@
     signOut,
     loadWorkspace,
     recordCashPayment,
-    configureFund
+    configureFund,
+    reviewMemberAccess
   });
 })(window);

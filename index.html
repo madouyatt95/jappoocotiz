@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link rel="stylesheet" href="./styles.css?v=5" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -141,8 +141,13 @@
         </section>
 
         <section class="page" id="page-activite" data-page="activite" aria-labelledby="activite-title">
-          <div class="page-heading"><div><p class="eyebrow">Tout est traçable</p><h1 id="activite-title">Activité</h1></div></div>
-          <div class="notice-card"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><strong>Historique sécurisé</strong><p>Chaque paiement conserve le nom de la personne habilitée qui l’a enregistré.</p></div></div>
+          <div class="page-heading"><div><p class="eyebrow">Registre familial</p><h1 id="activite-title">Mouvements généraux</h1></div></div>
+          <div class="notice-card"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><strong>Activité des paiements</strong><p>Tous les membres validés voient les mouvements généraux. Les identités restent réservées aux personnes ayant un droit de saisie.</p></div></div>
+          <div class="activity-summary" aria-label="Résumé des mouvements généraux">
+            <article><small>Mouvements</small><strong id="activity-movement-count">0</strong></article>
+            <article><small>Paiements actifs</small><strong id="activity-collected-total">0 €</strong></article>
+            <article><small>Dernière activité</small><strong id="activity-latest">Aucun mouvement</strong></article>
+          </div>
           <div class="activity-timeline" id="activity-list"></div>
         </section>
 
@@ -174,6 +179,11 @@
           </div>
           <div class="admin-content">
             <div class="admin-role"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><small>Autorisation Supabase vérifiée</small><strong id="admin-role-label">Personne habilitée</strong></div><em class="cash-only-badge">Espèces uniquement</em></div>
+            <section class="section-block member-access-section hidden" id="member-access-section" aria-labelledby="member-access-title">
+              <div class="section-heading"><div><p class="eyebrow">Validation obligatoire</p><h2 id="member-access-title">Comptes et droits</h2></div><span class="count-badge" id="pending-member-count">0</span></div>
+              <p class="section-help">Chaque nouveau compte reste bloqué jusqu’à votre choix : lecture seule ou lecture avec saisie des paiements.</p>
+              <div class="member-access-list" id="member-access-list"></div>
+            </section>
             <div class="admin-kpis">
               <article><span class="kpi-icon green">↗</span><small>Espèces encaissées</small><strong id="admin-cash-total">0 €</strong><em>Solde actuel</em></article>
               <article><span class="kpi-icon orange">#</span><small>Paiements enregistrés</small><strong id="admin-payment-count">0</strong><em>Historique vide</em></article>
@@ -272,7 +282,7 @@
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-heading"><div><p class="eyebrow">Accès sécurisé</p><h2 id="auth-title">Connexion à Jàppoo</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
       <form id="auth-form">
-        <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Lien de connexion personnel</strong><p>Indiquez votre e-mail. Supabase vous enverra un lien sécurisé, sans mot de passe.</p></div></div>
+        <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Lien de connexion personnel</strong><p>Après la création du compte, un administrateur devra valider votre accès et choisir vos droits.</p></div></div>
         <label class="form-field"><span>Adresse e-mail</span><input id="auth-email" type="email" autocomplete="email" inputmode="email" required placeholder="vous@exemple.com" /></label>
         <p class="form-status" id="auth-status" role="status" aria-live="polite"></p>
         <button class="primary-btn full" id="auth-submit" type="submit">Recevoir mon lien de connexion</button>
@@ -288,7 +298,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
-    <script src="./supabase-client.js?v=2"></script>
-    <script src="./app.js?v=5" defer></script>
+    <script src="./supabase-client.js?v=3"></script>
+    <script src="./app.js?v=6" defer></script>
   </body>
 </html>

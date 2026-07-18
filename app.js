@@ -122,11 +122,34 @@ function contributionDetail(item) {
 }
 
 function canRecordCash() {
-  return Boolean(workspace?.membership && AUTHORIZED_ROLES.includes(workspace.membership.role));
+  const member = workspace?.membership;
+  return Boolean(
+    member
+    && member.active
+    && member.approval_status === "approved"
+    && member.access_level === "write"
+    && AUTHORIZED_ROLES.includes(member.role)
+  );
+}
+
+function isAdministrator() {
+  return Boolean(canRecordCash() && workspace.membership.role === "admin");
+}
+
+function approvedMembers() {
+  return (workspace?.members || []).filter((member) => member.active && member.approval_status === "approved");
 }
 
 function roleLabel(role) {
   return ({ admin: "Administrateur", treasurer: "Trésorier", cash_collector: "Encaisseur", member: "Membre" })[role] || "Membre";
+}
+
+function accessLabel(member) {
+  if (!member) return "Accès protégé";
+  if (member.approval_status === "pending") return "En attente";
+  if (member.approval_status === "rejected") return "Accès refusé";
+  if (member.role === "admin") return "Administrateur";
+  return member.access_level === "write" ? "Lecture + saisie" : "Lecture seule";
 }
 
 function initials(name) {
@@ -212,14 +235,25 @@ function applyWorkspace(nextWorkspace) {
       recordedBy: payment.recorded_by === workspace.user.id ? workspace.membership.full_name : "Responsable habilité"
     };
   });
-  state.activities = state.payments.map((payment) => ({
-    id: `activity-${payment.id}`,
-    source: "supabase",
-    group: payment.date === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : payment.dateLabel,
-    title: "Paiement en espèces enregistré",
-    text: `${payment.member} • ${payment.contribution} • ${formatMoney(payment.amount)} €`,
-    time: `Enregistré par ${payment.recordedBy}`
-  }));
+  state.activities = (workspace.activityPayments || []).map((movement) => {
+    const reversed = Boolean(movement.reversed_at);
+    const movementDate = reversed ? String(movement.reversed_at).slice(0, 10) : movement.payment_date;
+    const person = movement.member_name || "Mouvement familial";
+    const responsible = reversed
+      ? movement.reversed_by_name || "Responsable habilité"
+      : movement.recorded_by_name || "Responsable habilité";
+    return {
+      id: `activity-${movement.payment_id}`,
+      source: "supabase",
+      group: movementDate === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : formatDate(movementDate),
+      title: reversed ? "Paiement annulé" : "Paiement en espèces reçu",
+      text: `${movement.fund_name || "Caisse"} • ${person} • ${reversed ? "−" : "+"} ${formatMoney(Number(movement.amount || 0))} €`,
+      time: reversed ? `Annulé par ${responsible}` : `Enregistré par ${responsible}`,
+      tone: reversed ? "expense" : "paid",
+      reversed,
+      amount: Number(movement.amount || 0)
+    };
+  });
   saveState();
 }
 
@@ -293,8 +327,13 @@ function renderFundAccount() {
 
 function renderActivities() {
   const container = document.querySelector("#activity-list");
+  const activePayments = state.activities.filter((item) => !item.reversed);
+  const collected = activePayments.reduce((sum, item) => sum + item.amount, 0);
+  document.querySelector("#activity-movement-count").textContent = String(state.activities.length);
+  document.querySelector("#activity-collected-total").textContent = `${formatMoney(collected)} €`;
+  document.querySelector("#activity-latest").textContent = state.activities[0]?.group || "Aucun mouvement";
   if (!state.activities.length) {
-    container.innerHTML = '<div class="empty-state"><span>✓</span><strong>Historique vide</strong><p>Aucune donnée de démonstration. Les prochaines opérations réelles seront tracées ici.</p></div>';
+    container.innerHTML = '<div class="empty-state"><span>↕</span><strong>Aucun mouvement général</strong><p>Les prochains paiements réels de la famille seront tracés ici.</p></div>';
     return;
   }
   const grouped = state.activities.reduce((result, item) => {
@@ -303,7 +342,7 @@ function renderActivities() {
   }, {});
   container.innerHTML = Object.entries(grouped).map(([group, activities]) => `
     <section class="timeline-group"><h2>${escapeHTML(group)}</h2>${activities.map((item) => `
-      <article class="timeline-item"><span class="timeline-dot paid">✓</span><div class="timeline-content"><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(item.text)}</p><time>${escapeHTML(item.time)}</time></div></article>`).join("")}</section>`).join("");
+      <article class="timeline-item"><span class="timeline-dot ${item.tone}">${item.reversed ? "−" : "+"}</span><div class="timeline-content"><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(item.text)}</p><time>${escapeHTML(item.time)}</time></div></article>`).join("")}</section>`).join("");
 }
 
 function renderAdminPayments() {
@@ -321,19 +360,61 @@ function renderAdminPayments() {
 
 function renderMemberStatuses() {
   const container = document.querySelector("#member-status-list");
-  if (!canRecordCash() || !workspace?.members?.length) {
+  const members = approvedMembers();
+  if (!canRecordCash() || !members.length) {
     container.innerHTML = '<div class="empty-state compact-empty"><span>👥</span><strong>Aucun membre</strong><p>Les membres rattachés apparaîtront ici.</p></div>';
     return;
   }
   const fund = workspace.funds.find((item) => item.code === adminFundView);
   if (!fund) return;
-  container.innerHTML = workspace.members.map((member) => {
+  container.innerHTML = members.map((member) => {
     const situation = fundSituation(member.id, fund.id);
     const upToDate = situation.outstanding <= 0;
     return `<article class="member-status-row">
       <span class="member-avatar">${initials(member.full_name)}</span>
       <div><strong>${escapeHTML(member.full_name)}</strong><small>${upToDate ? "À jour" : `${situation.missingMonths} mois manquant${situation.missingMonths > 1 ? "s" : ""}`}</small></div>
       <div class="member-due ${upToDate ? "paid" : "late"}"><b>${formatMoney(situation.outstanding)} €</b><small>${upToDate ? "Payé" : "À encaisser"}</small></div>
+    </article>`;
+  }).join("");
+}
+
+function renderMemberAccess() {
+  const section = document.querySelector("#member-access-section");
+  const container = document.querySelector("#member-access-list");
+  section.classList.toggle("hidden", !isAdministrator());
+  if (!isAdministrator()) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const members = (workspace.members || []).slice().sort((a, b) => {
+    const rank = { pending: 0, approved: 1, rejected: 2 };
+    return (rank[a.approval_status] ?? 3) - (rank[b.approval_status] ?? 3)
+      || String(a.full_name).localeCompare(String(b.full_name), "fr");
+  });
+  const pendingCount = members.filter((member) => member.approval_status === "pending").length;
+  document.querySelector("#pending-member-count").textContent = String(pendingCount);
+
+  if (!members.length) {
+    container.innerHTML = '<div class="empty-state compact-empty"><span>✓</span><strong>Aucune demande</strong></div>';
+    return;
+  }
+
+  container.innerHTML = members.map((member) => {
+    const pending = member.approval_status === "pending";
+    const rejected = member.approval_status === "rejected";
+    const protectedAdmin = member.role === "admin" && member.approval_status === "approved";
+    const status = pending ? "En attente de validation" : rejected ? "Accès refusé" : accessLabel(member);
+    const controls = protectedAdmin
+      ? '<span class="protected-access">Compte protégé</span>'
+      : `<div class="access-choice" role="group" aria-label="Droits de ${escapeHTML(member.full_name)}">
+          <button class="${!pending && !rejected && member.access_level === "read" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="read">Lecture seule</button>
+          <button class="${!pending && !rejected && member.access_level === "write" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write">Lecture + saisie</button>
+        </div>
+        ${pending ? `<button class="reject-access" type="button" data-reject-member="${member.id}">Refuser</button>` : ""}`;
+    return `<article class="access-member-card ${pending ? "pending" : rejected ? "rejected" : "approved"}">
+      <div class="access-member-head"><span class="member-avatar">${initials(member.full_name)}</span><div><strong>${escapeHTML(member.full_name)}</strong><small>${escapeHTML(status)}</small></div><em>${pending ? "Nouveau" : rejected ? "Refusé" : "Validé"}</em></div>
+      <div class="access-member-controls">${controls}</div>
     </article>`;
   }).join("");
 }
@@ -358,7 +439,7 @@ function renderPaymentOptions() {
   document.querySelector("#payment-contribution").innerHTML = state.contributions
     .filter((item) => item.backendId)
     .map((item) => `<option value="${item.id}">${escapeHTML(item.name)}</option>`).join("");
-  const members = canRecordCash() ? workspace.members : [];
+  const members = canRecordCash() ? approvedMembers() : [];
   document.querySelector("#payment-member").innerHTML = members.length
     ? members.map((member) => `<option value="${escapeHTML(member.id)}">${escapeHTML(member.full_name)}</option>`).join("")
     : '<option value="">Aucun membre disponible</option>';
@@ -388,16 +469,21 @@ function updateQuickPaymentSummary() {
 function renderIdentity() {
   const connected = Boolean(backendSession && workspace?.user);
   const member = workspace?.membership;
+  const approved = Boolean(member?.active && member.approval_status === "approved");
   const displayName = member?.full_name || workspace?.user?.email || "Non connecté";
   document.querySelector("#profile-name").textContent = displayName;
   document.querySelector("#profile-avatar").textContent = initials(displayName);
-  document.querySelector("#profile-meta").textContent = member
+  document.querySelector("#profile-meta").textContent = approved
     ? `${workspace.family?.name || "Ma famille"} • Données synchronisées`
+    : member?.approval_status === "pending"
+      ? "Compte créé • validation administrateur en attente"
+      : member?.approval_status === "rejected"
+        ? "Accès familial refusé par un administrateur"
     : connected ? "Compte connecté, accès familial non attribué" : "Connectez-vous pour voir votre situation réelle";
-  document.querySelector("#profile-role").textContent = member ? roleLabel(member.role) : "Accès protégé";
+  document.querySelector("#profile-role").textContent = accessLabel(member);
   document.querySelector("#auth-button").textContent = connected ? "Se déconnecter" : "Se connecter par e-mail";
-  document.querySelector("#admin-pill-label").textContent = canRecordCash() ? "Gestion" : connected ? "Accès" : "Connexion";
-  document.querySelector("#admin-role-label").textContent = member ? `${roleLabel(member.role)} • ${member.full_name}` : "Personne habilitée";
+  document.querySelector("#admin-pill-label").textContent = canRecordCash() ? "Gestion" : member?.approval_status === "pending" ? "En attente" : connected ? "Accès" : "Connexion";
+  document.querySelector("#admin-role-label").textContent = member ? `${accessLabel(member)} • ${member.full_name}` : "Personne habilitée";
   document.querySelector("#home-collected-label").textContent = canRecordCash() ? "Collecté en espèces" : "Mes versements";
   document.querySelector("#home-available-label").textContent = canRecordCash() ? "Disponible" : "Enregistrés";
   document.querySelector("#cash-balance-label").textContent = canRecordCash() ? "Solde disponible" : "Mes versements enregistrés";
@@ -407,17 +493,23 @@ function renderIdentity() {
   const title = document.querySelector("#sync-status-title");
   const detail = document.querySelector("#sync-status-detail");
   const banner = document.querySelector("#sync-banner");
-  banner.classList.toggle("synced", Boolean(member));
-  banner.classList.toggle("warning", connected && !member);
+  banner.classList.toggle("synced", approved);
+  banner.classList.toggle("warning", connected && !approved);
   if (syncing) {
     title.textContent = "Synchronisation…";
     detail.textContent = "Lecture sécurisée des données Supabase.";
-  } else if (member) {
+  } else if (approved) {
     title.textContent = "Données Supabase synchronisées";
-    detail.textContent = `${workspace.family?.name || "Ma famille"} • ${roleLabel(member.role)}`;
+    detail.textContent = `${workspace.family?.name || "Ma famille"} • ${accessLabel(member)}`;
+  } else if (member?.approval_status === "pending") {
+    title.textContent = "Compte en attente de validation";
+    detail.textContent = "Un administrateur doit choisir vos droits avant tout accès.";
+  } else if (member?.approval_status === "rejected") {
+    title.textContent = "Accès familial refusé";
+    detail.textContent = "Contactez un administrateur de la famille.";
   } else if (connected) {
-    title.textContent = "Accès familial à attribuer";
-    detail.textContent = "Un administrateur doit rattacher ce compte à Ma famille.";
+    title.textContent = "Création de la demande…";
+    detail.textContent = "Actualisez dans quelques instants pour voir son statut.";
   } else {
     title.textContent = "Connexion requise";
     detail.textContent = "Connectez-vous pour consulter vos données Supabase.";
@@ -455,6 +547,7 @@ function renderAll() {
   renderFundAccount();
   renderActivities();
   renderAdminPayments();
+  renderMemberAccess();
   renderMemberStatuses();
   renderFundSettings();
   renderPaymentOptions();
@@ -467,7 +560,8 @@ function navigate(page) {
   if (!document.querySelector(`[data-page="${page}"]`)) return;
   if (page === "gestion" && !canRecordCash()) {
     if (!backendSession) openSheet("auth-sheet");
-    else showToast("Ce compte n’est pas habilité à enregistrer des paiements.");
+    else if (workspace?.membership?.approval_status === "pending") showToast("Ce compte attend encore la validation d’un administrateur.");
+    else showToast("Ce compte dispose uniquement d’un accès en lecture.");
     return;
   }
   closeSheets();
@@ -633,6 +727,30 @@ async function submitFundConfiguration(event) {
   } finally {
     submit.disabled = false;
     submit.textContent = "Enregistrer la configuration";
+  }
+}
+
+async function reviewMemberAccess(memberId, decision, level, trigger) {
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
+  const member = workspace.members.find((item) => item.id === memberId);
+  if (!member) return showToast("Compte introuvable.");
+  const card = trigger.closest(".access-member-card");
+  card?.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  try {
+    await window.JappoBackend.reviewMemberAccess({
+      p_member_id: memberId,
+      p_decision: decision,
+      p_access_level: level
+    });
+    await syncFromBackend({ quiet: true });
+    if (decision === "reject") {
+      showToast(`Accès refusé pour ${member.full_name}.`);
+    } else {
+      showToast(`${member.full_name} : ${level === "write" ? "lecture et saisie autorisées" : "lecture seule autorisée"}.`);
+    }
+  } catch (error) {
+    showToast(error.message || "Les droits n’ont pas pu être modifiés.");
+    card?.querySelectorAll("button").forEach((button) => { button.disabled = false; });
   }
 }
 
@@ -837,6 +955,20 @@ function setupEvents() {
     }
     const editFundButton = event.target.closest("[data-edit-fund]");
     if (editFundButton) return openFundConfig(editFundButton.dataset.editFund);
+    const reviewMemberButton = event.target.closest("[data-review-member]");
+    if (reviewMemberButton) return reviewMemberAccess(
+      reviewMemberButton.dataset.reviewMember,
+      "approve",
+      reviewMemberButton.dataset.accessLevel,
+      reviewMemberButton
+    );
+    const rejectMemberButton = event.target.closest("[data-reject-member]");
+    if (rejectMemberButton) return reviewMemberAccess(
+      rejectMemberButton.dataset.rejectMember,
+      "reject",
+      "read",
+      rejectMemberButton
+    );
     const actionButton = event.target.closest("[data-action]");
     if (actionButton) return handleAction(actionButton.dataset.action);
     const voiceButton = event.target.closest("[data-voice-command]");

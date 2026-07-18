@@ -1,10 +1,10 @@
-const CACHE_NAME = "jappo-cotiz-v5";
+const CACHE_NAME = "jappo-cotiz-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=4",
-  "./app.js?v=5",
-  "./supabase-client.js?v=2",
+  "./styles.css?v=5",
+  "./app.js?v=6",
+  "./supabase-client.js?v=3",
   "./manifest.webmanifest",
   "./assets/icon.svg"
 ];

@@ -8,6 +8,9 @@ PWA mobile-first pour consulter les cotisations de la **Caisse famille** et de l
 - le micro lit uniquement l’état des cotisations ;
 - seuls les responsables habilités accèdent à l’enregistrement ;
 - les paiements sont enregistrés uniquement en espèces ;
+- tout nouveau compte reste en attente de validation ;
+- l’administrateur attribue soit la lecture seule, soit la lecture avec saisie des paiements ;
+- l’onglet **Activité** présente les mouvements généraux sans exposer les identités aux comptes en lecture seule ;
 - aucune donnée de démonstration n’est préchargée ;
 - seules les deux caisses demandées sont présentes.
 
@@ -32,16 +35,18 @@ Puis générer et servir `dist/` :
 npm run build
 ```
 
-Le schéma à appliquer dans le SQL Editor Supabase se trouve dans
-`supabase/migrations/202607180001_initial_schema.sql`.
+Les migrations Supabase se trouvent dans `supabase/migrations/` et doivent être
+appliquées dans l’ordre de leur nom.
 
 ## Parcours de vérification
 
 1. Sur **Accueil**, vérifier que le solde et l’historique sont vides.
 2. Toucher **Ma situation** : l’assistant lit uniquement les cotisations.
 3. Sans connexion, ouvrir **Gestion** : la connexion Supabase est demandée et le formulaire de paiement reste inaccessible.
-4. Avec un rôle `admin`, `treasurer` ou `cash_collector`, toucher le bouton `+`, choisir la caisse puis enregistrer un paiement en espèces.
-5. Vérifier que la mise à jour, le reçu et l’activité n’apparaissent qu’après la réponse positive de Supabase.
+4. Créer un nouveau compte et vérifier qu’il reste en attente sans accès aux caisses.
+5. Avec un compte administrateur, valider ce compte en **Lecture seule** ou **Lecture + saisie**.
+6. Avec un droit de saisie, toucher le bouton `+`, choisir la caisse puis enregistrer un paiement en espèces.
+7. Vérifier que le mouvement apparaît dans l’activité générale uniquement après la réponse positive de Supabase.
 
 Le navigateur ne valide aucune écriture financière. Il conserve seulement un cache de lecture hors ligne ; Supabase reste la source de vérité. Les règles RLS limitent la consultation au membre concerné et l’enregistrement aux rôles habilités, avec `cash` comme unique moyen de paiement accepté par la base.
 
