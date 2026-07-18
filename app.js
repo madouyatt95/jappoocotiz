@@ -481,7 +481,7 @@ function renderIdentity() {
         ? "Accès familial refusé par un administrateur"
     : connected ? "Compte connecté, accès familial non attribué" : "Connectez-vous pour voir votre situation réelle";
   document.querySelector("#profile-role").textContent = accessLabel(member);
-  document.querySelector("#auth-button").textContent = connected ? "Se déconnecter" : "Se connecter par e-mail";
+  document.querySelector("#auth-button").textContent = connected ? "Se déconnecter" : "Se connecter";
   document.querySelector("#admin-pill-label").textContent = canRecordCash() ? "Gestion" : member?.approval_status === "pending" ? "En attente" : connected ? "Accès" : "Connexion";
   document.querySelector("#admin-role-label").textContent = member ? `${accessLabel(member)} • ${member.full_name}` : "Personne habilitée";
   document.querySelector("#home-collected-label").textContent = canRecordCash() ? "Collecté en espèces" : "Mes versements";
@@ -836,21 +836,44 @@ async function syncFromBackend({ quiet = false } = {}) {
 async function submitAuth(event) {
   event.preventDefault();
   const email = document.querySelector("#auth-email").value.trim().toLowerCase();
+  const password = document.querySelector("#auth-password").value;
   const status = document.querySelector("#auth-status");
   const submit = document.querySelector("#auth-submit");
-  if (!email) return;
+  if (!email || !password) return;
   submit.disabled = true;
-  submit.textContent = "Envoi en cours…";
+  submit.textContent = "Connexion…";
+  status.textContent = "";
+  try {
+    await window.JappoBackend.signInWithPassword(email, password);
+    await syncFromBackend({ quiet: true });
+    event.target.reset();
+    closeSheets();
+    showToast("Connexion réussie.");
+  } catch (error) {
+    status.textContent = error.message || "L’adresse e-mail ou le mot de passe est incorrect.";
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Se connecter";
+  }
+}
+
+async function sendLoginLink() {
+  const emailInput = document.querySelector("#auth-email");
+  const email = emailInput.value.trim().toLowerCase();
+  const status = document.querySelector("#auth-status");
+  const button = document.querySelector("#auth-link-submit");
+  if (!emailInput.checkValidity()) return emailInput.reportValidity();
+  button.disabled = true;
+  button.textContent = "Envoi en cours…";
   status.textContent = "";
   try {
     await window.JappoBackend.sendMagicLink(email);
     status.textContent = "Lien envoyé. Ouvrez votre e-mail puis touchez le lien pour revenir dans Jàppoo.";
-    event.target.reset();
   } catch (error) {
     status.textContent = error.message || "Le lien n’a pas pu être envoyé.";
   } finally {
-    submit.disabled = false;
-    submit.textContent = "Recevoir mon lien de connexion";
+    button.disabled = false;
+    button.textContent = "Recevoir un lien sans mot de passe";
   }
 }
 
@@ -886,6 +909,7 @@ function handleAction(action) {
   if (action === "record-cash") return openQuickPayment();
   if (action === "auth-or-signout") return authOrSignOut();
   if (action === "auth-or-sync") return authOrSync();
+  if (action === "send-login-link") return sendLoginLink();
   if (action === "open-voice") return openSheet("voice-sheet");
   if (action === "close-sheets" || action === "close-confirm") return closeSheets();
   if (action === "start-listening") return startListening();

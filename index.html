@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=5" />
+    <link rel="stylesheet" href="./styles.css?v=6" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -282,10 +282,13 @@
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-heading"><div><p class="eyebrow">Accès sécurisé</p><h2 id="auth-title">Connexion à Jàppoo</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
       <form id="auth-form">
-        <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Lien de connexion personnel</strong><p>Après la création du compte, un administrateur devra valider votre accès et choisir vos droits.</p></div></div>
+        <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Connexion sécurisée</strong><p>Connectez-vous directement avec votre mot de passe, ou demandez un lien si vous n’en avez pas encore.</p></div></div>
         <label class="form-field"><span>Adresse e-mail</span><input id="auth-email" type="email" autocomplete="email" inputmode="email" required placeholder="vous@exemple.com" /></label>
+        <label class="form-field"><span>Mot de passe</span><input id="auth-password" type="password" autocomplete="current-password" required minlength="6" placeholder="Votre mot de passe" /></label>
         <p class="form-status" id="auth-status" role="status" aria-live="polite"></p>
-        <button class="primary-btn full" id="auth-submit" type="submit">Recevoir mon lien de connexion</button>
+        <button class="primary-btn full" id="auth-submit" type="submit">Se connecter</button>
+        <button class="link-login-button" id="auth-link-submit" type="button" data-action="send-login-link">Recevoir un lien sans mot de passe</button>
+        <p class="auth-help">Première connexion : le lien crée votre compte, qui devra ensuite être validé par un administrateur.</p>
       </form>
     </section>
 
@@ -298,7 +301,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
-    <script src="./supabase-client.js?v=3"></script>
-    <script src="./app.js?v=6" defer></script>
+    <script src="./supabase-client.js?v=4"></script>
+    <script src="./app.js?v=7" defer></script>
   </body>
 </html>

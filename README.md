@@ -43,10 +43,11 @@ appliquées dans l’ordre de leur nom.
 1. Sur **Accueil**, vérifier que le solde et l’historique sont vides.
 2. Toucher **Ma situation** : l’assistant lit uniquement les cotisations.
 3. Sans connexion, ouvrir **Gestion** : la connexion Supabase est demandée et le formulaire de paiement reste inaccessible.
-4. Créer un nouveau compte et vérifier qu’il reste en attente sans accès aux caisses.
-5. Avec un compte administrateur, valider ce compte en **Lecture seule** ou **Lecture + saisie**.
-6. Avec un droit de saisie, toucher le bouton `+`, choisir la caisse puis enregistrer un paiement en espèces.
-7. Vérifier que le mouvement apparaît dans l’activité générale uniquement après la réponse positive de Supabase.
+4. Se connecter directement avec une adresse e-mail et un mot de passe, ou demander un lien sécurisé sans mot de passe.
+5. Créer un nouveau compte par le lien et vérifier qu’il reste en attente sans accès aux caisses.
+6. Avec un compte administrateur, valider ce compte en **Lecture seule** ou **Lecture + saisie**.
+7. Avec un droit de saisie, toucher le bouton `+`, choisir la caisse puis enregistrer un paiement en espèces.
+8. Vérifier que le mouvement apparaît dans l’activité générale uniquement après la réponse positive de Supabase.
 
 Le navigateur ne valide aucune écriture financière. Il conserve seulement un cache de lecture hors ligne ; Supabase reste la source de vérité. Les règles RLS limitent la consultation au membre concerné et l’enregistrement aux rôles habilités, avec `cash` comme unique moyen de paiement accepté par la base.
 
