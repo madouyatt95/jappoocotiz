@@ -43,10 +43,10 @@ appliquées dans l’ordre de leur nom.
 1. Sur **Accueil**, vérifier que le solde et l’historique sont vides.
 2. Toucher **Ma situation** : l’assistant lit uniquement les cotisations.
 3. Sans connexion, ouvrir **Gestion** : la connexion Supabase est demandée et le formulaire de paiement reste inaccessible.
-4. Se connecter directement avec une adresse e-mail et un mot de passe, ou demander un lien sécurisé sans mot de passe.
-5. Créer un nouveau compte par le lien et vérifier qu’il reste en attente sans accès aux caisses.
+4. Saisir son e-mail et toucher **Se connecter** : aucun mot de passe n’est demandé et le lien reçu ouvre directement la session.
+5. Créer un nouveau compte par ce même lien et vérifier qu’il reste en attente sans accès aux caisses.
 6. Avec un compte administrateur, valider ce compte en **Lecture seule** ou **Lecture + saisie**.
-7. Avec un droit de saisie, toucher le bouton `+`, choisir la caisse puis enregistrer un paiement en espèces.
+7. Avec un droit de saisie, vérifier que **+ Ajouter un paiement** est immédiatement visible, choisir la caisse puis enregistrer un paiement en espèces.
 8. Vérifier que le mouvement apparaît dans l’activité générale uniquement après la réponse positive de Supabase.
 
 Le navigateur ne valide aucune écriture financière. Il conserve seulement un cache de lecture hors ligne ; Supabase reste la source de vérité. Les règles RLS limitent la consultation au membre concerné et l’enregistrement aux rôles habilités, avec `cash` comme unique moyen de paiement accepté par la base.
@@ -56,6 +56,7 @@ Le navigateur ne valide aucune écriture financière. Il conserve seulement un c
 - **Caisse famille** : 5 € par mois depuis janvier 2021 ;
 - **Caisse décès** : 5 € par mois depuis janvier 2021 ;
 - chaque caisse dispose de son propre affichage et peut être configurée par un administrateur ;
+- le bouton de paramétrage apparaît directement dans **Caisses** pour l’administrateur ;
 - un versement est réparti automatiquement sur les plus anciennes mensualités impayées ;
 - les boutons `1 mois`, `3 mois`, `6 mois` et `Tout` accélèrent la saisie en espèces.
 

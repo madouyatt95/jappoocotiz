@@ -313,8 +313,6 @@ main { min-height: calc(100dvh - 150px); }
 .compact-notice { margin-bottom: 14px; padding: 11px; }.compact-notice .feature-icon { width: 36px; height: 36px; flex-basis: 36px; }
 .form-field input[readonly] { color: #5c6d68; background: #edf2ef; cursor: not-allowed; }
 .form-status { min-height: 34px; margin: 2px 0 10px; color: var(--brand-2); font-size: 10px; line-height: 1.5; }
-.link-login-button { display: block; width: 100%; min-height: 45px; margin-top: 8px; padding: 0 12px; border: 1px solid #cfdcd6; border-radius: 14px; color: var(--brand); background: white; font-size: 11px; font-weight: 850; cursor: pointer; }
-.link-login-button:disabled { opacity: .6; cursor: wait; }
 .auth-help { margin: 10px 8px 0; color: var(--muted); font-size: 9px; line-height: 1.45; text-align: center; }
 .cash-payment-card .pending-proof { margin-bottom: 13px; }
 .voice-hint { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 10px; border-radius: 12px; color: #5f5c9a; background: #f0eff9; font-size: 9px; }.voice-hint svg { flex: 0 0 auto; width: 17px; height: 17px; }
@@ -334,6 +332,10 @@ main { min-height: calc(100dvh - 150px); }
 .fund-switch button { min-height: 42px; padding: 0 10px; border: 0; border-radius: 11px; color: var(--muted); background: transparent; font-size: 11px; font-weight: 850; cursor: pointer; }
 .fund-switch button.active { color: var(--brand); background: white; box-shadow: 0 4px 13px rgba(22,57,48,.09); }
 .fund-switch.compact button { min-height: 36px; }
+.fund-config-shortcut { display: flex; width: 100%; align-items: center; gap: 11px; margin: -4px 0 14px; padding: 11px 13px; border: 1px solid #cedfd7; border-radius: 15px; color: var(--brand); background: #edf6ef; text-align: left; cursor: pointer; }
+.fund-config-shortcut > span:first-child { display: grid; flex: 0 0 36px; height: 36px; place-items: center; border-radius: 12px; color: white; background: var(--brand); font-size: 17px; }
+.fund-config-shortcut > span:last-child { display: flex; min-width: 0; flex-direction: column; }
+.fund-config-shortcut strong { font-size: 11px; }.fund-config-shortcut small { margin-top: 3px; color: var(--muted); font-size: 8px; }
 .fund-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 0 14px 13px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--line); }
 .fund-stat-grid > div { padding: 10px 8px; background: #fafbf9; text-align: center; }
 .fund-stat-grid small, .fund-stat-grid strong { display: block; }.fund-stat-grid small { color: var(--muted); font-size: 8px; }.fund-stat-grid strong { margin-top: 3px; font-size: 12px; }
@@ -351,7 +353,10 @@ main { min-height: calc(100dvh - 150px); }
 .member-due { text-align: right; }.member-due b { display: block; font-size: 12px; }.member-due.paid b { color: #347451; }.member-due.late b { color: var(--red); }
 .fund-setting-row button { min-height: 34px; padding: 0 10px; border: 0; border-radius: 10px; color: var(--brand); background: #e2eee9; font-size: 9px; font-weight: 850; cursor: pointer; }
 .compact-empty { min-height: 120px; border: 0; }
-.admin-add-fab { position: fixed; z-index: 52; right: 20px; bottom: calc(20px + var(--safe-bottom)); display: grid; width: 58px; height: 58px; place-items: center; border: 4px solid #f2f5f3; border-radius: 50%; color: var(--brand); background: var(--lime); box-shadow: 0 12px 28px rgba(18,61,53,.28); font-size: 31px; font-weight: 500; cursor: pointer; }
+.payment-fab { position: fixed; z-index: 52; right: 19px; bottom: calc(132px + var(--safe-bottom)); display: flex; min-height: 50px; align-items: center; gap: 8px; padding: 0 15px 0 10px; border: 3px solid var(--canvas); border-radius: 99px; color: var(--brand); background: var(--lime); box-shadow: 0 12px 28px rgba(18,61,53,.28); cursor: pointer; }
+.payment-fab span { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 50%; color: white; background: var(--brand); font-size: 24px; font-weight: 500; line-height: 1; }
+.payment-fab strong { font-size: 11px; font-weight: 900; }
+.admin-mode .payment-fab { bottom: calc(20px + var(--safe-bottom)); }
 .quick-fund-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .quick-fund-grid button { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; gap: 2px 9px; min-height: 70px; padding: 10px; border: 2px solid var(--line); border-radius: 15px; color: var(--ink); background: white; text-align: left; cursor: pointer; }
 .quick-fund-grid button.active { border-color: var(--brand-2); background: #edf5f1; }.quick-fund-grid .contribution-icon { grid-row: 1 / 3; width: 40px; height: 40px; flex-basis: 40px; }.quick-fund-grid strong { align-self: end; font-size: 10px; }.quick-fund-grid small { color: var(--muted); font-size: 8px; }
@@ -364,7 +369,7 @@ main { min-height: calc(100dvh - 150px); }
   .app-shell { position: relative; max-width: 760px; margin: 0 auto; box-shadow: 0 0 45px rgba(22,57,48,.09); }
   .topbar, .bottom-nav { right: auto; left: 50%; width: min(760px, 100%); transform: translateX(-50%); }
   .voice-fab { right: max(calc((100vw - 760px) / 2 + 19px), 19px); }
-  .admin-add-fab { right: max(calc((100vw - 760px) / 2 + 20px), 20px); }
+  .payment-fab { right: max(calc((100vw - 760px) / 2 + 19px), 19px); }
   .bottom-sheet { left: 50%; width: min(600px, 100%); transform: translateX(-50%); border-radius: 27px 27px 0 0; }
   @keyframes sheet-up { from { transform: translate(-50%,100%); } to { transform: translate(-50%,0); } }
   .page:not(.admin-page) { padding-right: 28px; padding-left: 28px; }

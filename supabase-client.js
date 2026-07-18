@@ -100,14 +100,6 @@
     });
   }
 
-  async function signInWithPassword(email, password) {
-    const session = await authRequest("token?grant_type=password", {
-      method: "POST",
-      body: JSON.stringify({ email, password })
-    });
-    return storeSession(session);
-  }
-
   async function signOut() {
     const session = readSession();
     if (session?.access_token) {
@@ -243,7 +235,6 @@
     initializeSession,
     readSession,
     sendMagicLink,
-    signInWithPassword,
     signOut,
     loadWorkspace,
     recordCashPayment,
