@@ -108,6 +108,17 @@
     return storeSession(session);
   }
 
+  async function signInAnonymously(pseudo) {
+    const session = await authRequest("signup", {
+      method: "POST",
+      body: JSON.stringify({
+        data: { full_name: pseudo, pseudo },
+        gotrue_meta_security: {}
+      })
+    });
+    return storeSession(session);
+  }
+
   async function updatePassword(password) {
     const session = await initializeSession();
     if (!session) throw new Error("Reconnectez-vous avant de définir le mot de passe.");
@@ -155,6 +166,23 @@
     return payload;
   }
 
+  async function publicRest(path, options = {}) {
+    if (!configured()) throw new Error("Supabase n’est pas configuré.");
+    const response = await fetch(`${baseUrl}/rest/v1/${path}`, {
+      method: options.method || "GET",
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+      },
+      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) })
+    });
+    const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.message || payload?.details || payload?.hint || "Supabase a refusé l’opération.");
+    return payload;
+  }
+
   function query(table, parameters) {
     return rest(`${table}?${new URLSearchParams(parameters).toString()}`);
   }
@@ -177,7 +205,7 @@
     if (!user) return null;
 
     const memberships = await query("family_members", {
-      select: "id,family_id,user_id,full_name,role,active,approval_status,access_level,write_fund_codes,joined_on,created_at,reviewed_at",
+      select: "id,family_id,user_id,full_name,pseudo,role,active,approval_status,access_level,write_fund_codes,joined_on,created_at,reviewed_at,login_code_issued_at",
       user_id: `eq.${user.id}`,
       limit: "1"
     });
@@ -209,7 +237,7 @@
       callRpc("list_payment_activity", { p_family_id: familyId }),
       authorized
         ? query("family_members", {
-          select: "id,full_name,user_id,role,active,approval_status,access_level,write_fund_codes,joined_on,created_at,reviewed_at",
+          select: "id,full_name,pseudo,user_id,role,active,approval_status,access_level,write_fund_codes,joined_on,created_at,reviewed_at,login_code_issued_at",
           family_id: `eq.${familyId}`,
           ...(administrator ? {} : { active: "eq.true", approval_status: "eq.approved" }),
           order: "created_at.desc"
@@ -243,6 +271,30 @@
     });
   }
 
+  async function publicRpc(name, parameters) {
+    return publicRest(`rpc/${name}`, {
+      method: "POST",
+      body: parameters
+    });
+  }
+
+  async function requestPseudoMembership(pseudo) {
+    return publicRpc("request_pseudo_membership", { p_pseudo: pseudo });
+  }
+
+  async function signInMember(pseudo, code) {
+    const prepared = await publicRpc("prepare_member_login", { p_pseudo: pseudo, p_code: code });
+    if (!prepared?.ok || !prepared?.claim_token) throw new Error(prepared?.message || "Pseudo ou code incorrect.");
+    try {
+      const session = await signInAnonymously(pseudo);
+      await callRpc("claim_member_login", { p_claim_token: prepared.claim_token });
+      return session;
+    } catch (error) {
+      clearSession();
+      throw error;
+    }
+  }
+
   async function recordCashPayment(payment) {
     return callRpc("record_cash_payment", payment);
   }
@@ -255,6 +307,10 @@
     return callRpc("review_member_access", review);
   }
 
+  async function resetMemberLoginCode(memberId) {
+    return callRpc("reset_member_login_code", { p_member_id: memberId });
+  }
+
   async function setMemberFundSchedule(schedule) {
     return callRpc("set_member_fund_schedule", schedule);
   }
@@ -265,12 +321,16 @@
     readSession,
     sendMagicLink,
     signInWithPassword,
+    signInAnonymously,
     updatePassword,
     signOut,
     loadWorkspace,
+    requestPseudoMembership,
+    signInMember,
     recordCashPayment,
     configureFund,
     reviewMemberAccess,
+    resetMemberLoginCode,
     setMemberFundSchedule
   });
 })(window);

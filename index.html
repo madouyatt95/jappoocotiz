@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=8" />
+    <link rel="stylesheet" href="./styles.css?v=9" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -307,15 +307,38 @@
     <section class="bottom-sheet hidden" id="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="auth-title">
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-heading"><div><p class="eyebrow">Accès sécurisé</p><h2 id="auth-title">Connexion à Jàppoo</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-      <form id="auth-form">
-        <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Connexion administrateur</strong><p>Utilisez votre mot de passe. Le lien par e-mail reste disponible uniquement comme accès de secours.</p></div></div>
-        <label class="form-field"><span>Adresse e-mail</span><input id="auth-email" type="email" autocomplete="email" inputmode="email" required placeholder="vous@exemple.com" /></label>
-        <label class="form-field"><span>Mot de passe administrateur</span><input id="auth-password" type="password" autocomplete="current-password" minlength="10" placeholder="Votre mot de passe" /></label>
-        <p class="form-status" id="auth-status" role="status" aria-live="polite"></p>
-        <button class="primary-btn full" id="auth-submit" type="submit">Se connecter</button>
-        <button class="link-login-button" id="auth-link-submit" type="button" data-action="send-login-link">Recevoir un lien de secours</button>
-        <p class="auth-help">Après votre connexion actuelle par lien, ouvrez Profil pour créer votre mot de passe.</p>
-      </form>
+      <div class="auth-mode-switch" role="tablist" aria-label="Type de connexion">
+        <button class="active" type="button" role="tab" aria-selected="true" data-auth-mode="member">Membre</button>
+        <button type="button" role="tab" aria-selected="false" data-auth-mode="admin">Administrateur</button>
+      </div>
+      <div class="auth-panel" id="member-auth-panel">
+        <div class="notice-card compact-notice"><span class="feature-icon indigo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 22a8 8 0 0 1 16 0"/></svg></span><div><strong>Aucun e-mail pour les membres</strong><p>La première demande utilise seulement un nom ou pseudo. Après validation, l’administrateur remet le code personnel.</p></div></div>
+        <p class="auth-step-title"><b>1</b><span><strong>Première connexion</strong><small>Demander l’adhésion avec un nom ou pseudo</small></span></p>
+        <form class="membership-request-form" id="membership-request-form">
+          <label class="form-field"><span>Nom ou pseudo</span><input id="membership-request-pseudo" type="text" autocomplete="nickname" minlength="2" maxlength="40" required placeholder="Ex. Mamadou ou Madou75" /></label>
+          <p class="form-status" id="membership-request-status" role="status" aria-live="polite"></p>
+          <button class="secondary-btn full" type="submit">Envoyer ma demande d’adhésion</button>
+        </form>
+        <div class="auth-divider"><span>Déjà validé ?</span></div>
+        <p class="auth-step-title"><b>2</b><span><strong>Connexion avec code</strong><small>Ouvrir sa fiche après validation de l’administrateur</small></span></p>
+        <form id="member-login-form">
+          <label class="form-field"><span>Nom ou pseudo</span><input id="member-login-pseudo" type="text" autocomplete="username" minlength="2" maxlength="40" required placeholder="Le même nom ou pseudo" /></label>
+          <label class="form-field"><span>Code à 6 chiffres</span><input id="member-login-code" class="code-input" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000" /></label>
+          <p class="form-status" id="member-login-status" role="status" aria-live="polite"></p>
+          <button class="primary-btn full" id="member-login-submit" type="submit">Se connecter à ma fiche</button>
+        </form>
+      </div>
+      <div class="auth-panel hidden" id="admin-auth-panel">
+        <form id="admin-auth-form">
+          <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Connexion administrateur</strong><p>Utilisez votre e-mail et votre mot de passe. Le lien par e-mail reste un accès de secours.</p></div></div>
+          <label class="form-field"><span>Adresse e-mail</span><input id="auth-email" type="email" autocomplete="email" inputmode="email" required placeholder="vous@exemple.com" /></label>
+          <label class="form-field"><span>Mot de passe administrateur</span><input id="auth-password" type="password" autocomplete="current-password" minlength="10" placeholder="Votre mot de passe" /></label>
+          <p class="form-status" id="auth-status" role="status" aria-live="polite"></p>
+          <button class="primary-btn full" id="auth-submit" type="submit">Se connecter</button>
+          <button class="link-login-button" id="auth-link-submit" type="button" data-action="send-login-link">Recevoir un lien de secours</button>
+          <p class="auth-help">Après une connexion par lien, ouvrez Profil pour créer votre mot de passe.</p>
+        </form>
+      </div>
     </section>
 
     <section class="center-modal hidden" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
@@ -325,9 +348,18 @@
       <button class="primary-btn full" type="button" data-action="close-confirm">Compris</button>
     </section>
 
+    <section class="center-modal member-code-modal hidden" id="member-code-modal" role="dialog" aria-modal="true" aria-labelledby="member-code-title">
+      <span class="confirmation-icon code-confirmation">#</span>
+      <h2 id="member-code-title">Code membre créé</h2>
+      <p id="member-code-message">Communiquez ce code au membre.</p>
+      <strong class="member-access-code" id="member-access-code">000000</strong>
+      <button class="primary-btn full" type="button" data-action="copy-member-code">Copier le code</button>
+      <button class="link-login-button" type="button" data-action="close-sheets">Fermer</button>
+    </section>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
-    <script src="./supabase-client.js?v=6"></script>
-    <script src="./app.js?v=9" defer></script>
+    <script src="./supabase-client.js?v=7"></script>
+    <script src="./app.js?v=10" defer></script>
   </body>
 </html>

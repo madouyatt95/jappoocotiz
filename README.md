@@ -9,6 +9,8 @@ PWA mobile-first pour consulter les cotisations de la **Caisse famille** et de l
 - seuls les responsables habilités accèdent à l’enregistrement ;
 - les paiements sont enregistrés uniquement en espèces ;
 - tout nouveau compte reste en attente de validation ;
+- un membre demande son adhésion avec un nom ou pseudo uniquement, sans e-mail ;
+- après validation, l’administrateur lui remet un code personnel à 6 chiffres pour ouvrir sa fiche ;
 - l’administrateur a toujours l’écriture sur les deux caisses ;
 - pour chaque autre responsable, l’administrateur attribue la lecture seule ou l’écriture sur **Famille**, **Décès** ou **les deux** ;
 - l’onglet **Activité** présente les mouvements généraux sans exposer les identités aux comptes en lecture seule ;
@@ -44,14 +46,17 @@ appliquées dans l’ordre de leur nom.
 1. Sur **Accueil**, vérifier que le solde et l’historique sont vides.
 2. Toucher **Ma situation** : l’assistant lit uniquement les cotisations.
 3. Sans connexion, ouvrir **Gestion** : la connexion Supabase est demandée et le formulaire de paiement reste inaccessible.
-4. Après une première connexion par lien, ouvrir **Profil → Créer mon mot de passe**. Les connexions suivantes utilisent directement l’e-mail et ce mot de passe ; le lien reste un secours.
-5. Créer un nouveau compte et vérifier qu’il reste en attente sans accès aux caisses.
-6. Avec un compte administrateur, choisir **Lecture seule**, **Famille**, **Décès** ou **Les deux**.
-7. Avec un droit de saisie, vérifier que **+ Ajouter un paiement** est immédiatement visible et que seules les caisses autorisées sont proposées.
-8. Dans **Gestion → Définir les mensualités dues**, choisir un membre, une caisse, le premier et le dernier mois, puis vérifier le recalcul des arriérés.
-9. Vérifier que le mouvement apparaît dans l’activité générale uniquement après la réponse positive de Supabase.
+4. Dans l’onglet **Membre**, utiliser **Première connexion** avec seulement un nom ou pseudo et vérifier que la demande apparaît chez l’administrateur.
+5. L’administrateur choisit **Lecture seule**, **Famille**, **Décès** ou **Les deux** puis communique le code à 6 chiffres affiché.
+6. Le membre utilise **Connexion avec code** avec le même pseudo et ce code pour ouvrir sa propre fiche.
+7. Dans l’onglet **Administrateur**, se connecter par e-mail et mot de passe. Après une connexion initiale par lien, le mot de passe se crée dans **Profil**.
+8. Avec un droit de saisie, vérifier que **+ Ajouter un paiement** est immédiatement visible et que seules les caisses autorisées sont proposées.
+9. Dans **Gestion → Définir les mensualités dues**, choisir un membre, une caisse, le premier et le dernier mois, puis vérifier le recalcul des arriérés.
+10. Vérifier que le mouvement apparaît dans l’activité générale uniquement après la réponse positive de Supabase.
 
 Le navigateur ne valide aucune écriture financière. Il conserve seulement un cache de lecture hors ligne ; Supabase reste la source de vérité. Les règles RLS limitent la consultation au membre concerné et l’enregistrement aux rôles habilités, avec `cash` comme unique moyen de paiement accepté par la base.
+
+Le code membre n’est jamais stocké en clair : seule son empreinte est conservée. Après cinq erreurs, la connexion est bloquée pendant 15 minutes. Une session Supabase anonyme n’est rattachée à la fiche qu’après vérification du pseudo et du code.
 
 ## Caisses et arriérés
 

@@ -21,6 +21,7 @@ let paymentMonthCount = 1;
 let deferredInstallPrompt = null;
 let recognition = null;
 let toastTimer = null;
+let authMode = "member";
 let workspace = null;
 let backendSession = null;
 let syncing = false;
@@ -426,6 +427,7 @@ function renderMemberAccess() {
     const rejected = member.approval_status === "rejected";
     const protectedAdmin = member.role === "admin" && member.approval_status === "approved";
     const status = pending ? "En attente de validation" : rejected ? "Accès refusé" : accessLabel(member);
+    const identity = member.pseudo ? `${member.full_name} • @${member.pseudo}` : member.full_name;
     const memberCodes = writableFundCodes(member).slice().sort().join(",");
     const controls = protectedAdmin
       ? '<span class="protected-access">Écriture permanente sur les deux caisses</span>'
@@ -435,9 +437,10 @@ function renderMemberAccess() {
           <button class="${!pending && !rejected && member.access_level === "write" && memberCodes === "death" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="death">Décès</button>
           <button class="${!pending && !rejected && member.access_level === "write" && memberCodes === "death,family" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="family,death">Les deux</button>
         </div>
+        ${!pending && !rejected && member.pseudo ? `<button class="reset-code-button" type="button" data-reset-member-code="${member.id}">Créer un nouveau code</button>` : ""}
         ${pending ? `<button class="reject-access" type="button" data-reject-member="${member.id}">Refuser</button>` : ""}`;
     return `<article class="access-member-card ${pending ? "pending" : rejected ? "rejected" : "approved"}">
-      <div class="access-member-head"><span class="member-avatar">${initials(member.full_name)}</span><div><strong>${escapeHTML(member.full_name)}</strong><small>${escapeHTML(status)}</small></div><em>${pending ? "Nouveau" : rejected ? "Refusé" : "Validé"}</em></div>
+      <div class="access-member-head"><span class="member-avatar">${initials(member.full_name)}</span><div><strong>${escapeHTML(identity)}</strong><small>${escapeHTML(status)}</small></div><em>${pending ? "Nouveau" : rejected ? "Refusé" : "Validé"}</em></div>
       <div class="access-member-controls">${controls}</div>
     </article>`;
   }).join("");
@@ -829,7 +832,7 @@ async function reviewMemberAccess(memberId, decision, level, writeFunds, trigger
   const card = trigger.closest(".access-member-card");
   card?.querySelectorAll("button").forEach((button) => { button.disabled = true; });
   try {
-    await window.JappoBackend.reviewMemberAccess({
+    const reviewResult = await window.JappoBackend.reviewMemberAccess({
       p_member_id: memberId,
       p_decision: decision,
       p_access_level: level,
@@ -838,6 +841,8 @@ async function reviewMemberAccess(memberId, decision, level, writeFunds, trigger
     await syncFromBackend({ quiet: true });
     if (decision === "reject") {
       showToast(`Accès refusé pour ${member.full_name}.`);
+    } else if (reviewResult?.access_code) {
+      showMemberCode(member.full_name, reviewResult.access_code);
     } else {
       const scope = writeFunds.length === 2 ? "les deux caisses" : writeFunds[0] === "family" ? "la caisse famille" : "la caisse décès";
       showToast(`${member.full_name} : ${level === "write" ? `saisie autorisée sur ${scope}` : "lecture seule autorisée"}.`);
@@ -845,6 +850,37 @@ async function reviewMemberAccess(memberId, decision, level, writeFunds, trigger
   } catch (error) {
     showToast(error.message || "Les droits n’ont pas pu être modifiés.");
     card?.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+  }
+}
+
+function showMemberCode(memberName, code) {
+  document.querySelector("#member-code-message").textContent = `Communiquez ce code à ${memberName}. Il servira avec son pseudo.`;
+  document.querySelector("#member-access-code").textContent = code;
+  openSheet("member-code-modal");
+}
+
+async function resetMemberLoginCode(memberId, trigger) {
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
+  const member = workspace.members.find((item) => item.id === memberId);
+  if (!member?.pseudo) return showToast("Ce compte ne se connecte pas par pseudo.");
+  trigger.disabled = true;
+  try {
+    const code = await window.JappoBackend.resetMemberLoginCode(memberId);
+    showMemberCode(member.full_name, code);
+  } catch (error) {
+    showToast(error.message || "Le code n’a pas pu être recréé.");
+  } finally {
+    trigger.disabled = false;
+  }
+}
+
+async function copyMemberCode() {
+  const code = document.querySelector("#member-access-code").textContent.trim();
+  try {
+    await navigator.clipboard.writeText(code);
+    showToast("Code membre copié.");
+  } catch {
+    showToast(`Code membre : ${code}`);
   }
 }
 
@@ -1005,6 +1041,68 @@ async function submitAuth(event) {
   }
 }
 
+function setAuthMode(mode) {
+  authMode = mode === "admin" ? "admin" : "member";
+  document.querySelector("#member-auth-panel").classList.toggle("hidden", authMode !== "member");
+  document.querySelector("#admin-auth-panel").classList.toggle("hidden", authMode !== "admin");
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    const active = button.dataset.authMode === authMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+}
+
+async function submitMembershipRequest(event) {
+  event.preventDefault();
+  const pseudo = document.querySelector("#membership-request-pseudo").value.trim();
+  const status = document.querySelector("#membership-request-status");
+  const submit = event.target.querySelector('button[type="submit"]');
+  if (pseudo.length < 2) return;
+  submit.disabled = true;
+  submit.textContent = "Envoi de la demande…";
+  status.textContent = "";
+  try {
+    await window.JappoBackend.requestPseudoMembership(pseudo);
+    event.target.reset();
+    status.textContent = "Demande envoyée. L’administrateur doit maintenant la valider et vous remettre votre code à 6 chiffres.";
+  } catch (error) {
+    status.textContent = error.message || "La demande d’adhésion n’a pas pu être envoyée.";
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Envoyer ma demande d’adhésion";
+  }
+}
+
+async function submitMemberLogin(event) {
+  event.preventDefault();
+  const pseudo = document.querySelector("#member-login-pseudo").value.trim();
+  const code = document.querySelector("#member-login-code").value.replace(/\D/g, "");
+  const status = document.querySelector("#member-login-status");
+  const submit = document.querySelector("#member-login-submit");
+  if (pseudo.length < 2 || code.length !== 6) {
+    status.textContent = "Saisissez votre pseudo et les 6 chiffres remis par l’administrateur.";
+    return;
+  }
+  submit.disabled = true;
+  submit.textContent = "Ouverture de votre fiche…";
+  status.textContent = "";
+  try {
+    backendSession = await window.JappoBackend.signInMember(pseudo, code);
+    event.target.reset();
+    await syncFromBackend({ quiet: true });
+    if (!workspace?.membership?.active || workspace.membership.approval_status !== "approved") {
+      throw new Error("Votre fiche n’est pas encore disponible.");
+    }
+    closeSheets();
+    showToast("Votre fiche personnelle est ouverte.");
+  } catch (error) {
+    status.textContent = error.message || "Le pseudo ou le code est incorrect.";
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Se connecter à ma fiche";
+  }
+}
+
 async function sendLoginLink() {
   const email = document.querySelector("#auth-email").value.trim().toLowerCase();
   const status = document.querySelector("#auth-status");
@@ -1028,7 +1126,10 @@ async function sendLoginLink() {
 }
 
 async function authOrSignOut() {
-  if (!backendSession) return openSheet("auth-sheet");
+  if (!backendSession) {
+    setAuthMode("member");
+    return openSheet("auth-sheet");
+  }
   await window.JappoBackend.signOut();
   backendSession = null;
   workspace = null;
@@ -1058,6 +1159,7 @@ function handleAction(action) {
   if (messages[action]) return showToast(messages[action]);
   if (action === "record-cash") return openQuickPayment();
   if (action === "send-login-link") return sendLoginLink();
+  if (action === "copy-member-code") return copyMemberCode();
   if (action === "auth-or-signout") return authOrSignOut();
   if (action === "auth-or-sync") return authOrSync();
   if (action === "open-voice") return openSheet("voice-sheet");
@@ -1079,6 +1181,8 @@ async function installApp() {
 
 function setupEvents() {
   document.addEventListener("click", (event) => {
+    const authModeButton = event.target.closest("[data-auth-mode]");
+    if (authModeButton) return setAuthMode(authModeButton.dataset.authMode);
     const navButton = event.target.closest("[data-nav]");
     if (navButton) return navigate(navButton.dataset.nav);
     const fundViewButton = event.target.closest("[data-fund-view]");
@@ -1145,6 +1249,8 @@ function setupEvents() {
       [],
       rejectMemberButton
     );
+    const resetCodeButton = event.target.closest("[data-reset-member-code]");
+    if (resetCodeButton) return resetMemberLoginCode(resetCodeButton.dataset.resetMemberCode, resetCodeButton);
     const actionButton = event.target.closest("[data-action]");
     if (actionButton) return handleAction(actionButton.dataset.action);
     const voiceButton = event.target.closest("[data-voice-command]");
@@ -1160,7 +1266,9 @@ function setupEvents() {
   document.querySelector("#fund-config-form").addEventListener("submit", submitFundConfiguration);
   document.querySelector("#member-schedule-form").addEventListener("submit", submitMemberSchedule);
   document.querySelector("#admin-password-form").addEventListener("submit", submitAdminPassword);
-  document.querySelector("#auth-form").addEventListener("submit", submitAuth);
+  document.querySelector("#admin-auth-form").addEventListener("submit", submitAuth);
+  document.querySelector("#member-login-form").addEventListener("submit", submitMemberLogin);
+  document.querySelector("#membership-request-form").addEventListener("submit", submitMembershipRequest);
   document.querySelector("#payment-member").addEventListener("change", updateQuickPaymentSummary);
   document.querySelector("#payment-contribution").addEventListener("change", updateQuickPaymentSummary);
   document.querySelector("#schedule-member").addEventListener("change", hydrateScheduleForm);
