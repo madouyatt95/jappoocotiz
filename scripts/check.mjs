@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const files = ["index.html", "styles.css", "app.js", "supabase-client.js", "sw.js", "manifest.webmanifest", "assets/icon.svg", "vercel.json", "scripts/build.mjs", "config.js", "supabase/migrations/202607180001_initial_schema.sql", "supabase/migrations/202607180002_member_approval_and_activity.sql", "supabase/migrations/202607180003_member_fund_schedules.sql", "supabase/migrations/202607180004_pseudo_member_login.sql", "supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"];
+const files = ["index.html", "styles.css", "app.js", "supabase-client.js", "sw.js", "manifest.webmanifest", "assets/icon.svg", "vercel.json", "scripts/build.mjs", "config.js", "supabase/migrations/202607180001_initial_schema.sql", "supabase/migrations/202607180002_member_approval_and_activity.sql", "supabase/migrations/202607180003_member_fund_schedules.sql", "supabase/migrations/202607180004_pseudo_member_login.sql", "supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql", "supabase/migrations/202607180006_payment_reversals_and_push.sql", "supabase/functions/send-payment-push/index.ts"];
 const contents = Object.fromEntries(await Promise.all(files.map(async (file) => [file, await readFile(join(root, file), "utf8")])));
 
 const checks = [
@@ -12,7 +12,7 @@ const checks = [
   ["orientation mobile", contents["manifest.webmanifest"].includes('"orientation": "portrait-primary"')],
   ["viewport et safe-area", contents["index.html"].includes("viewport-fit=cover") && contents["styles.css"].includes("env(safe-area-inset-bottom)")],
   ["mode plein écran", contents["styles.css"].includes("100dvh")],
-  ["service worker v11", contents["app.js"].includes("serviceWorker.register") && contents["sw.js"].includes("jappo-cotiz-v11")],
+  ["service worker v12", contents["app.js"].includes("serviceWorker.register") && contents["sw.js"].includes("jappo-cotiz-v12")],
   ["cache de lecture sans démo", contents["app.js"].includes("jappo-cotiz-read-cache-v3") && contents["app.js"].includes("payments: []") && contents["app.js"].includes("activities: []")],
   ["deux caisses uniquement", contents["app.js"].includes('ALLOWED_CONTRIBUTIONS = ["family", "death"]') && !contents["app.js"].includes("Projet maison") && !contents["app.js"].includes("Fête familiale")],
   ["aucune identité fictive", !contents["index.html"].includes("Mahamadou") && !contents["app.js"].includes("Aminata") && !contents["app.js"].includes("Ousmane")],
@@ -26,7 +26,7 @@ const checks = [
 
 checks.push(["build statique Vercel", contents["vercel.json"].includes('"outputDirectory": "dist"') && contents["scripts/build.mjs"].includes("Build statique")]);
 checks.push(["configuration Supabase publique séparée", contents["index.html"].includes("config.js?v=1") && !contents["config.js"].includes("supabase.co")]);
-checks.push(["client Supabase authentifié", contents["index.html"].includes("supabase-client.js?v=8") && contents["supabase-client.js"].includes("Authorization: `Bearer") && contents["app.js"].includes("syncFromBackend")]);
+checks.push(["client Supabase authentifié", contents["index.html"].includes("supabase-client.js?v=9") && contents["supabase-client.js"].includes("Authorization: `Bearer") && contents["app.js"].includes("syncFromBackend")]);
 checks.push(["connexion admin par mot de passe", contents["index.html"].includes('id="auth-password"') && contents["supabase-client.js"].includes('grant_type=password') && contents["app.js"].includes("signInWithPassword(email, password)")]);
 checks.push(["création du mot de passe admin", contents["index.html"].includes('id="admin-password-form"') && contents["supabase-client.js"].includes("updatePassword") && contents["app.js"].includes("submitAdminPassword")]);
 checks.push(["lien de connexion de secours", contents["index.html"].includes('data-action="send-login-link"') && contents["app.js"].includes("sendLoginLink") && contents["supabase-client.js"].includes("sendMagicLink")]);
@@ -35,7 +35,7 @@ checks.push(["aucune écriture financière locale", !contents["app.js"].includes
 checks.push(["mensualités de 5 euros depuis 2021", contents["supabase/migrations/202607180001_initial_schema.sql"].includes("monthly_amount numeric") && contents["supabase/migrations/202607180001_initial_schema.sql"].includes("date '2021-01-01'")]);
 checks.push(["allocation sur les plus anciennes échéances", contents["supabase/migrations/202607180001_initial_schema.sql"].includes("record_cash_payment") && contents["supabase/migrations/202607180001_initial_schema.sql"].includes("cash_payment_allocations")]);
 checks.push(["affichage séparé des caisses", contents["index.html"].includes('data-fund-view="family"') && contents["index.html"].includes('data-cash-fund="death"')]);
-checks.push(["paiement rapide immédiatement visible aux habilités", contents["index.html"].includes('id="quick-payment-fab"') && contents["index.html"].includes("Ajouter un paiement") && contents["app.js"].includes('classList.toggle("hidden", !canRecordCash())') && contents["index.html"].includes('data-month-count="all"')]);
+checks.push(["paiement rapide immédiatement visible aux habilités", contents["index.html"].includes('id="quick-payment-fab"') && contents["index.html"].includes("Ajouter un paiement") && contents["app.js"].includes('classList.toggle("hidden", !canRecordCash())')]);
 checks.push(["configuration administrateur des caisses", contents["index.html"].includes("fund-config-form") && contents["supabase-client.js"].includes("configureFund")]);
 checks.push(["paramétrage caisse accessible depuis les caisses", contents["index.html"].includes('id="fund-config-shortcut"') && contents["app.js"].includes('classList.toggle("hidden", !isAdministrator())') && contents["app.js"].includes("shortcut.dataset.editFund = fund.id")]);
 checks.push(["nouveaux comptes en attente", contents["supabase/migrations/202607180002_member_approval_and_activity.sql"].includes("'pending', 'read'") && contents["app.js"].includes("Compte en attente de validation")]);
@@ -58,6 +58,14 @@ checks.push(["montant ventilé sur les arriérés", contents["index.html"].inclu
 checks.push(["statuts paiement cohérents", contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("'partial', 'paid'") && contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("contribution_periods_status_check")]);
 checks.push(["périodes admises depuis janvier 2021", contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("normalized_start < date '2021-01-01'") && !contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("normalized_start < greatest" )]);
 checks.push(["suppression administrateur protégée", contents["index.html"].includes('id="delete-member-form"') && contents["supabase-client.js"].includes("deleteFamilyMember") && contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("delete_family_member") && contents["supabase/migrations/202607180005_payment_allocation_and_member_deletion.sql"].includes("target.user_id = auth.uid()")]);
+checks.push(["aucun choix manuel du nombre de mensualités", !contents["index.html"].includes("data-month-count") && !contents["app.js"].includes("paymentMonthCount") && contents["app.js"].includes("paymentAllocationFor")]);
+checks.push(["mensualités dues réservées à l’administrateur", contents["index.html"].includes("Administrateur uniquement") && contents["app.js"].includes('section.classList.toggle("hidden", !isAdministrator())') && contents["supabase/migrations/202607180006_payment_reversals_and_push.sql"].includes("Seul un administrateur peut définir les mensualités dues")]);
+checks.push(["gestion compacte et filtrable", contents["index.html"].includes("management-panel") && contents["index.html"].includes('id="member-access-search"') && contents["styles.css"].includes("max-height: 520px")]);
+checks.push(["vue globale retirée de l’accueil", !contents["index.html"].includes('class="fund-snapshot"') && !contents["index.html"].includes('id="home-collected"')]);
+checks.push(["annulation traçable des paiements", contents["index.html"].includes('id="reverse-payment-form"') && contents["app.js"].includes("reverseCashPayment") && contents["supabase/migrations/202607180006_payment_reversals_and_push.sql"].includes("reversal_reason = trim(reason)")]);
+checks.push(["dépenses contrôlées par caisse", contents["index.html"].includes('id="expense-form"') && contents["supabase-client.js"].includes("recordCashExpense") && contents["supabase/migrations/202607180006_payment_reversals_and_push.sql"].includes("create table if not exists public.cash_expenses") && contents["supabase/migrations/202607180006_payment_reversals_and_push.sql"].includes("Solde insuffisant")]);
+checks.push(["solde net et dépenses dans activité", contents["app.js"].includes("fundBalance") && contents["app.js"].includes('movement.method === "expense"') && contents["index.html"].includes("Solde net")]);
+checks.push(["notifications push réelles", contents["sw.js"].includes('addEventListener("push"') && contents["app.js"].includes("pushManager.subscribe") && contents["supabase/functions/send-payment-push/index.ts"].includes("sendNotification") && contents["scripts/build.mjs"].includes("NEXT_PUBLIC_VAPID_PUBLIC_KEY")]);
 
 for (const file of ["app.js", "supabase-client.js", "sw.js", "server.mjs", "scripts/build.mjs", "scripts/check.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", join(root, file)], { encoding: "utf8" });

@@ -1,4 +1,5 @@
 const STORAGE_KEY = "jappo-cotiz-read-cache-v3";
+const NOTIFICATION_SEEN_KEY = "jappo-cotiz-last-notification-v1";
 const ALLOWED_CONTRIBUTIONS = ["family", "death"];
 const AUTHORIZED_ROLES = ["admin", "treasurer", "cash_collector"];
 
@@ -9,6 +10,7 @@ const initialState = {
     { id: "death", name: "Caisse décès", description: "Fonds de solidarité mensuel", monthlyAmount: 5, startDate: "2021-01-01", dueDay: 10, amount: 0, paid: 0, due: null, missingMonths: 0, status: "unconfigured", icon: "shield" }
   ],
   payments: [],
+  expenses: [],
   activities: []
 };
 
@@ -17,11 +19,13 @@ let currentFilter = "all";
 let currentFundView = "family";
 let cashFundView = "family";
 let adminFundView = "family";
-let paymentMonthCount = 1;
 let deferredInstallPrompt = null;
 let recognition = null;
 let toastTimer = null;
 let authMode = "member";
+let memberAccessFilter = "all";
+let memberAccessSearch = "";
+let memberAccessInitialized = false;
 let workspace = null;
 let backendSession = null;
 let syncing = false;
@@ -45,6 +49,7 @@ function loadState() {
       const clean = cloneInitialState();
       clean.settings = { ...clean.settings, ...saved.settings };
       clean.payments = saved.payments.filter((payment) => payment.method === "Espèces" && ALLOWED_CONTRIBUTIONS.includes(payment.contributionId));
+      clean.expenses = Array.isArray(saved.expenses) ? saved.expenses.filter((expense) => ALLOWED_CONTRIBUTIONS.includes(expense.contributionId)) : [];
       clean.activities = saved.activities.filter((activity) => activity.source === "supabase");
       clean.contributions = clean.contributions.map((base) => {
         const stored = saved.contributions.find(({ id }) => id === base.id);
@@ -79,6 +84,31 @@ function formatMoney(value, decimals = 0) {
 function totalCollected() {
   const payments = canRecordCash() ? state.payments.filter((payment) => canWriteFund(payment.contributionId)) : state.payments;
   return payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+}
+
+function fundCollected(code) {
+  return state.payments
+    .filter((payment) => payment.contributionId === code)
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+}
+
+function fundExpenses(code) {
+  return state.expenses
+    .filter((expense) => expense.contributionId === code)
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+}
+
+function fundBalance(code) {
+  return fundCollected(code) - fundExpenses(code);
+}
+
+function totalExpenses() {
+  const expenses = canRecordCash() ? state.expenses.filter((expense) => canWriteFund(expense.contributionId)) : [];
+  return expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+}
+
+function availableTotal() {
+  return totalCollected() - totalExpenses();
 }
 
 function personalCollected() {
@@ -252,10 +282,25 @@ function applyWorkspace(nextWorkspace) {
       recordedBy: payment.recorded_by === workspace.user.id ? workspace.membership.full_name : "Responsable habilité"
     };
   });
+  state.expenses = (workspace.expenses || []).map((expense) => {
+    const fund = fundById.get(expense.fund_id);
+    return {
+      id: expense.id,
+      contributionId: fund?.code || "family",
+      contribution: fund?.name || "Caisse",
+      amount: Number(expense.amount || 0),
+      reason: expense.reason || "Dépense de caisse",
+      date: expense.expense_date,
+      dateLabel: formatDate(expense.expense_date),
+      createdAt: expense.created_at,
+      spentBy: expense.spent_by === workspace.user.id ? workspace.membership.full_name : "Responsable habilité"
+    };
+  });
   state.activities = (workspace.activityPayments || []).map((movement) => {
+    const expense = movement.method === "expense";
     const reversed = Boolean(movement.reversed_at);
     const movementDate = reversed ? String(movement.reversed_at).slice(0, 10) : movement.payment_date;
-    const person = movement.member_name || "Mouvement familial";
+    const person = expense ? movement.reversal_reason || "Dépense de caisse" : movement.member_name || "Mouvement familial";
     const responsible = reversed
       ? movement.reversed_by_name || "Responsable habilité"
       : movement.recorded_by_name || "Responsable habilité";
@@ -263,11 +308,15 @@ function applyWorkspace(nextWorkspace) {
       id: `activity-${movement.payment_id}`,
       source: "supabase",
       group: movementDate === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : formatDate(movementDate),
-      title: reversed ? "Paiement annulé" : "Paiement en espèces reçu",
-      text: `${movement.fund_name || "Caisse"} • ${person} • ${reversed ? "−" : "+"} ${formatMoney(Number(movement.amount || 0))} €`,
-      time: reversed ? `Annulé par ${responsible}` : `Enregistré par ${responsible}`,
-      tone: reversed ? "expense" : "paid",
+      title: expense ? "Dépense de caisse" : reversed ? "Paiement annulé" : "Paiement en espèces reçu",
+      text: expense
+        ? `${movement.fund_name || "Caisse"} • ${person} • − ${formatMoney(Number(movement.amount || 0))} €`
+        : `${movement.fund_name || "Caisse"} • ${person} • ${reversed ? "−" : "+"} ${formatMoney(Number(movement.amount || 0))} €${reversed && movement.reversal_reason ? ` • Motif : ${movement.reversal_reason}` : ""}`,
+      time: expense ? `Dépensé par ${responsible}` : reversed ? `Annulé par ${responsible} • trace conservée` : `Enregistré par ${responsible}`,
+      tone: expense || reversed ? "expense" : "paid",
       reversed,
+      expense,
+      reason: movement.reversal_reason || "",
       amount: Number(movement.amount || 0)
     };
   });
@@ -321,25 +370,37 @@ function renderDetailedContributions() {
 
 function renderTransactions() {
   const container = document.querySelector("#transaction-list");
-  const payments = state.payments.filter((payment) => payment.contributionId === cashFundView);
-  if (!payments.length) {
-    container.innerHTML = '<div class="empty-state"><span>₣</span><strong>Aucune opération</strong><p>Les paiements en espèces enregistrés apparaîtront ici.</p></div>';
+  const movements = [
+    ...state.payments
+      .filter((payment) => payment.contributionId === cashFundView)
+      .map((payment) => ({ ...payment, kind: "payment", sortDate: `${payment.date}T00:00:00` })),
+    ...state.expenses
+      .filter((expense) => expense.contributionId === cashFundView)
+      .map((expense) => ({ ...expense, kind: "expense", sortDate: expense.createdAt || `${expense.date}T00:00:00` }))
+  ].sort((a, b) => String(b.sortDate).localeCompare(String(a.sortDate)));
+  if (!movements.length) {
+    container.innerHTML = '<div class="empty-state"><span>₣</span><strong>Aucune opération</strong><p>Les encaissements et dépenses enregistrés apparaîtront ici.</p></div>';
     return;
   }
-  container.innerHTML = payments.slice(0, 8).map((payment) => `
-    <article class="transaction"><span class="transaction-icon in">↓</span><div><strong>${escapeHTML(payment.contribution)}</strong><small>${escapeHTML(payment.member)} • ${escapeHTML(payment.dateLabel)}</small></div><b class="money-in">+ ${formatMoney(payment.amount)} €</b></article>`).join("");
+  container.innerHTML = movements.slice(0, 10).map((movement) => movement.kind === "expense" ? `
+    <article class="transaction"><span class="transaction-icon out">↑</span><div><strong>${escapeHTML(movement.reason)}</strong><small>${escapeHTML(movement.contribution)} • ${escapeHTML(movement.dateLabel)}</small></div><b class="money-out">− ${formatMoney(movement.amount)} €</b></article>` : `
+    <article class="transaction"><span class="transaction-icon in">↓</span><div><strong>${escapeHTML(movement.contribution)}</strong><small>${escapeHTML(movement.member)} • ${escapeHTML(movement.dateLabel)}</small></div><b class="money-in">+ ${formatMoney(movement.amount)} €</b></article>`).join("");
 }
 
 function renderFundAccount() {
   const fund = state.contributions.find((item) => item.id === cashFundView) || state.contributions[0];
   const fundPayments = state.payments.filter((payment) => payment.contributionId === fund.id);
-  const collected = fundPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const collected = fundCollected(fund.id);
+  const spent = fundExpenses(fund.id);
+  const balance = collected - spent;
   const shortcut = document.querySelector("#fund-config-shortcut");
   shortcut.dataset.editFund = fund.id;
   document.querySelector("#fund-config-shortcut-title").textContent = `Paramétrer ${fund.name}`;
-  document.querySelector("#cash-balance").textContent = `${formatMoney(collected, 2)} €`;
+  document.querySelector("#cash-balance").textContent = `${formatMoney(canRecordCash() ? balance : collected, 2)} €`;
   document.querySelector("#cash-in").textContent = `+ ${formatMoney(collected)} €`;
-  document.querySelector("#cash-updated").textContent = fundPayments.length ? `${fundPayments.length} encaissement${fundPayments.length > 1 ? "s" : ""} en espèces` : "Aucune opération enregistrée";
+  document.querySelector("#cash-out").textContent = canRecordCash() ? `− ${formatMoney(spent)} €` : "Non affiché";
+  const movementCount = fundPayments.length + state.expenses.filter((expense) => expense.contributionId === fund.id).length;
+  document.querySelector("#cash-updated").textContent = movementCount ? `${movementCount} mouvement${movementCount > 1 ? "s" : ""} enregistré${movementCount > 1 ? "s" : ""}` : "Aucune opération enregistrée";
   document.querySelector("#fund-period-card").innerHTML = `
     <div><span class="contribution-icon ${fund.id === "family" ? "green" : "indigo"}">${iconSVG(fund.icon)}</span><div><small>Caisse sélectionnée</small><strong>${escapeHTML(fund.name)}</strong></div></div>
     <div class="fund-config-facts"><span><small>Mensualité</small><b>${formatMoney(fund.monthlyAmount)} €</b></span><span><small>Depuis</small><b>${formatPeriod(fund.startDate)}</b></span><span><small>Échéance</small><b>Le ${fund.dueDay}</b></span></div>`;
@@ -347,10 +408,9 @@ function renderFundAccount() {
 
 function renderActivities() {
   const container = document.querySelector("#activity-list");
-  const activePayments = state.activities.filter((item) => !item.reversed);
-  const collected = activePayments.reduce((sum, item) => sum + item.amount, 0);
+  const netBalance = state.activities.reduce((sum, item) => item.reversed ? sum : sum + (item.expense ? -item.amount : item.amount), 0);
   document.querySelector("#activity-movement-count").textContent = String(state.activities.length);
-  document.querySelector("#activity-collected-total").textContent = `${formatMoney(collected)} €`;
+  document.querySelector("#activity-collected-total").textContent = `${formatMoney(netBalance)} €`;
   document.querySelector("#activity-latest").textContent = state.activities[0]?.group || "Aucun mouvement";
   if (!state.activities.length) {
     container.innerHTML = '<div class="empty-state"><span>↕</span><strong>Aucun mouvement général</strong><p>Les prochains paiements réels de la famille seront tracés ici.</p></div>';
@@ -362,21 +422,25 @@ function renderActivities() {
   }, {});
   container.innerHTML = Object.entries(grouped).map(([group, activities]) => `
     <section class="timeline-group"><h2>${escapeHTML(group)}</h2>${activities.map((item) => `
-      <article class="timeline-item"><span class="timeline-dot ${item.tone}">${item.reversed ? "−" : "+"}</span><div class="timeline-content"><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(item.text)}</p><time>${escapeHTML(item.time)}</time></div></article>`).join("")}</section>`).join("");
+      <article class="timeline-item"><span class="timeline-dot ${item.tone}">${item.reversed || item.expense ? "−" : "+"}</span><div class="timeline-content"><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(item.text)}</p><time>${escapeHTML(item.time)}</time></div></article>`).join("")}</section>`).join("");
 }
 
 function renderAdminPayments() {
   const container = document.querySelector("#admin-cash-payments");
   const writablePayments = state.payments.filter((payment) => canWriteFund(payment.contributionId));
+  const reversalTraces = state.activities.filter((activity) => activity.reversed).slice(0, 3);
   if (!writablePayments.length) {
-    container.innerHTML = '<div class="notice-card"><span class="feature-icon green">✓</span><div><strong>Aucun paiement enregistré</strong><p>La liste est vide et ne contient aucune donnée de démonstration.</p></div></div>';
+    container.innerHTML = `<div class="notice-card"><span class="feature-icon green">✓</span><div><strong>Aucun paiement actif</strong><p>Les paiements annulés restent tracés ci-dessous et dans Activité.</p></div></div>${reversalTraces.map((trace) => `<div class="reversal-audit"><strong>${escapeHTML(trace.title)} • trace conservée</strong><small>${escapeHTML(trace.text)}<br>${escapeHTML(trace.time)}</small></div>`).join("")}`;
     return;
   }
-  container.innerHTML = writablePayments.slice(0, 6).map((payment) => `
+  const activeMarkup = writablePayments.slice(0, 6).map((payment) => `
     <article class="pending-card cash-payment-card">
       <div class="pending-main"><span class="member-avatar">MC</span><div><strong>${escapeHTML(payment.member)}</strong><small>${escapeHTML(payment.contribution)} • Espèces • ${escapeHTML(payment.periodLabel)}</small></div><div class="pending-amount"><b>${formatMoney(payment.amount)} €</b><time>${escapeHTML(payment.dateLabel)}</time></div></div>
       <div class="pending-proof">${iconSVG("receipt")}<span>Enregistré par ${escapeHTML(payment.recordedBy)}</span></div>
+      ${isAdministrator() ? `<button class="reverse-payment-button" type="button" data-reverse-payment="${payment.id}">Annuler une saisie erronée</button>` : ""}
     </article>`).join("");
+  const auditMarkup = reversalTraces.length ? `<div class="audit-trace-list">${reversalTraces.map((trace) => `<div class="reversal-audit"><strong>${escapeHTML(trace.title)} • trace conservée</strong><small>${escapeHTML(trace.text)}<br>${escapeHTML(trace.time)}</small></div>`).join("")}</div>` : "";
+  container.innerHTML = activeMarkup + auditMarkup;
 }
 
 function renderMemberStatuses() {
@@ -416,13 +480,31 @@ function renderMemberAccess() {
   });
   const pendingCount = members.filter((member) => member.approval_status === "pending").length;
   document.querySelector("#pending-member-count").textContent = String(pendingCount);
+  document.querySelector("#pending-member-count").classList.toggle("empty", pendingCount === 0);
+  if (!memberAccessInitialized) {
+    section.open = pendingCount > 0;
+    memberAccessInitialized = true;
+  }
 
   if (!members.length) {
+    document.querySelector("#member-access-result").textContent = "0 compte";
     container.innerHTML = '<div class="empty-state compact-empty"><span>✓</span><strong>Aucune demande</strong></div>';
     return;
   }
 
-  container.innerHTML = members.map((member) => {
+  const normalizedSearch = memberAccessSearch.trim().toLocaleLowerCase("fr");
+  const visibleMembers = members.filter((member) => {
+    const matchesFilter = memberAccessFilter === "all" || member.approval_status === memberAccessFilter;
+    const identity = `${member.full_name || ""} ${member.pseudo || ""}`.toLocaleLowerCase("fr");
+    return matchesFilter && (!normalizedSearch || identity.includes(normalizedSearch));
+  });
+  document.querySelector("#member-access-result").textContent = `${visibleMembers.length} compte${visibleMembers.length > 1 ? "s" : ""} affiché${visibleMembers.length > 1 ? "s" : ""} • ${pendingCount} en attente`;
+  if (!visibleMembers.length) {
+    container.innerHTML = '<div class="empty-state compact-empty"><span>⌕</span><strong>Aucun résultat</strong><p>Modifiez la recherche ou le filtre.</p></div>';
+    return;
+  }
+
+  container.innerHTML = visibleMembers.map((member) => {
     const pending = member.approval_status === "pending";
     const rejected = member.approval_status === "rejected";
     const protectedAdmin = member.role === "admin" && member.approval_status === "approved";
@@ -439,15 +521,21 @@ function renderMemberAccess() {
         </div>
         ${!pending && !rejected && member.pseudo ? `<button class="reset-code-button" type="button" data-reset-member-code="${member.id}">Créer un nouveau code</button>` : ""}
         ${pending ? `<button class="reject-access" type="button" data-reject-member="${member.id}">Refuser</button>` : ""}`;
-    return `<article class="access-member-card ${pending ? "pending" : rejected ? "rejected" : "approved"}">
-      <div class="access-member-head"><span class="member-avatar">${initials(member.full_name)}</span><div><strong>${escapeHTML(identity)}</strong><small>${escapeHTML(status)}</small></div><em>${pending ? "Nouveau" : rejected ? "Refusé" : "Validé"}</em></div>
+    return `<details class="access-member-card ${pending ? "pending" : rejected ? "rejected" : "approved"}">
+      <summary class="access-member-head"><span class="member-avatar">${initials(member.full_name)}</span><div><strong>${escapeHTML(identity)}</strong><small>${escapeHTML(status)}</small></div><em>${pending ? "Nouveau" : rejected ? "Refusé" : "Validé"}</em><b aria-hidden="true">⌄</b></summary>
       <div class="access-member-controls">${controls}${protectedAdmin ? "" : `<button class="delete-member-button" type="button" data-delete-member="${member.id}">Supprimer le membre et ses transactions</button>`}</div>
-    </article>`;
+    </details>`;
   }).join("");
 }
 
 function renderFundSettings() {
+  const panel = document.querySelector("#fund-settings-panel");
   const container = document.querySelector("#fund-settings-list");
+  panel.classList.toggle("hidden", !isAdministrator());
+  if (!isAdministrator()) {
+    container.innerHTML = "";
+    return;
+  }
   if (!workspace?.funds?.length) {
     container.innerHTML = '<div class="empty-state compact-empty"><span>⚙</span><strong>Caisses non synchronisées</strong></div>';
     return;
@@ -478,6 +566,36 @@ function renderPaymentOptions() {
       <span class="contribution-icon ${item.id === "family" ? "green" : "indigo"}">${iconSVG(item.icon)}</span><strong>${escapeHTML(item.name)}</strong><small>${formatMoney(item.monthlyAmount)} € / mois</small>
     </button>`).join("");
   updateQuickPaymentSummary();
+}
+
+function renderExpenseOptions() {
+  const select = document.querySelector("#expense-fund");
+  const previousFund = select.value || adminFundView;
+  const writableContributions = state.contributions.filter((item) => item.backendId && canWriteFund(item.id));
+  select.innerHTML = writableContributions.map((item) => `<option value="${item.id}">${escapeHTML(item.name)}</option>`).join("");
+  select.value = writableContributions.some((item) => item.id === previousFund) ? previousFund : writableContributions[0]?.id || "";
+  document.querySelector("#expense-fund-grid").innerHTML = writableContributions.map((item) => `
+    <button class="${select.value === item.id ? "active" : ""}" type="button" data-expense-fund="${item.id}">
+      <span class="contribution-icon ${item.id === "family" ? "green" : "indigo"}">${iconSVG(item.icon)}</span><strong>${escapeHTML(item.name)}</strong><small>Solde ${formatMoney(fundBalance(item.id))} €</small>
+    </button>`).join("");
+  updateExpenseBalancePreview();
+}
+
+function updateExpenseBalancePreview() {
+  const code = document.querySelector("#expense-fund")?.value;
+  const fund = state.contributions.find((item) => item.id === code);
+  const amount = Number(document.querySelector("#expense-amount")?.value);
+  const preview = document.querySelector("#expense-balance-preview");
+  if (!preview) return;
+  preview.classList.remove("error");
+  if (!fund) {
+    preview.innerHTML = "<span>Solde disponible</span><strong>0 €</strong><small>Choisissez une caisse autorisée.</small>";
+    return;
+  }
+  const balance = fundBalance(fund.id);
+  const remaining = balance - (Number.isFinite(amount) ? amount : 0);
+  if (Number.isFinite(amount) && amount > balance + 0.001) preview.classList.add("error");
+  preview.innerHTML = `<span>Solde disponible • ${escapeHTML(fund.name)}</span><strong>${formatMoney(balance)} €</strong><small>${Number.isFinite(amount) && amount > 0 ? `Solde après dépense : ${formatMoney(remaining)} €` : "Le serveur empêchera toute dépense supérieure au solde."}</small>`;
 }
 
 function currentMonthValue() {
@@ -524,8 +642,8 @@ function hydrateScheduleForm() {
 
 function renderScheduleOptions() {
   const section = document.querySelector("#member-schedule-section");
-  section.classList.toggle("hidden", !canRecordCash());
-  if (!canRecordCash()) return;
+  section.classList.toggle("hidden", !isAdministrator());
+  if (!isAdministrator()) return;
   const memberSelect = document.querySelector("#schedule-member");
   const fundSelect = document.querySelector("#schedule-fund");
   const previousMember = memberSelect.value;
@@ -569,7 +687,7 @@ function paymentAllocationFor(memberId, fundId, amount) {
   };
 }
 
-function updatePaymentAllocationPreview({ syncChips = false } = {}) {
+function updatePaymentAllocationPreview() {
   const memberId = document.querySelector("#payment-member")?.value;
   const code = document.querySelector("#payment-contribution")?.value;
   const fund = workspace?.funds?.find((item) => item.code === code);
@@ -584,12 +702,6 @@ function updatePaymentAllocationPreview({ syncChips = false } = {}) {
   }
 
   const allocation = paymentAllocationFor(memberId, fund.id, amount);
-  if (syncChips) {
-    const suggestions = { "1": Number(fund.monthly_amount), "3": Number(fund.monthly_amount) * 3, "6": Number(fund.monthly_amount) * 6, all: allocation.outstanding };
-    document.querySelectorAll("[data-month-count]").forEach((button) => {
-      button.classList.toggle("active", Number.isFinite(amount) && Math.abs(amount - suggestions[button.dataset.monthCount]) < 0.001);
-    });
-  }
 
   if (!allocation.outstanding) {
     preview.innerHTML = "<span>Affectation automatique</span><strong>Ce membre est à jour</strong><small>Définissez une période plus longue si de nouvelles mensualités doivent être dues.</small>";
@@ -617,15 +729,14 @@ function updatePaymentAllocationPreview({ syncChips = false } = {}) {
   return allocation;
 }
 
-function updateQuickPaymentSummary({ setSuggestedAmount = true } = {}) {
+function updateQuickPaymentSummary({ clearAmount = false } = {}) {
   const memberId = document.querySelector("#payment-member")?.value;
   const code = document.querySelector("#payment-contribution")?.value;
   const fund = workspace?.funds?.find((item) => item.code === code);
   const summary = document.querySelector("#quick-payment-summary");
   if (!summary) return;
   const situation = memberId && fund ? fundSituation(memberId, fund.id) : null;
-  const amount = situation ? Math.min(situation.outstanding, Number(fund.monthly_amount) * paymentMonthCount) : 0;
-  if (setSuggestedAmount) document.querySelector("#payment-amount").value = amount > 0 ? amount.toFixed(2) : "";
+  if (clearAmount) document.querySelector("#payment-amount").value = "";
   summary.innerHTML = situation
     ? `<span>Reste à payer</span><strong>${formatMoney(situation.outstanding)} €</strong><small>${situation.missingMonths} mensualité${situation.missingMonths === 1 ? "" : "s"} manquante${situation.missingMonths === 1 ? "" : "s"} • ${formatMoney(Number(fund.monthly_amount))} € / mois</small>`
     : '<span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small>';
@@ -656,8 +767,6 @@ function renderIdentity() {
   if (!allowedCodes.includes(adminFundView)) adminFundView = allowedCodes[0] || "family";
   document.querySelector("#admin-pill-label").textContent = canRecordCash() ? "Gestion" : member?.approval_status === "pending" ? "En attente" : connected ? "Accès" : "Connexion";
   document.querySelector("#admin-role-label").textContent = member ? `${accessLabel(member)} • ${member.full_name}` : "Personne habilitée";
-  document.querySelector("#home-collected-label").textContent = canRecordCash() ? "Collecté en espèces" : "Mes versements";
-  document.querySelector("#home-available-label").textContent = canRecordCash() ? "Disponible" : "Enregistrés";
   document.querySelector("#cash-balance-label").textContent = canRecordCash() ? "Solde disponible" : "Mes versements enregistrés";
   document.querySelector("#cash-in-label").textContent = canRecordCash() ? "Entrées en espèces" : "Mes entrées en espèces";
   document.querySelector("#cash-privacy-label").lastChild.textContent = canRecordCash() ? "Vue gestion" : "Vue personnelle";
@@ -689,7 +798,7 @@ function renderIdentity() {
 }
 
 function renderSummaries() {
-  const cashCollected = totalCollected();
+  const cashBalance = availableTotal();
   const writablePaymentCount = state.payments.filter((payment) => canWriteFund(payment.contributionId)).length;
   const outstanding = outstandingTotal();
   const paidFunds = state.contributions.filter((item) => item.paid > 0).length;
@@ -706,9 +815,7 @@ function renderSummaries() {
   document.querySelector("#paid-summary").textContent = `${formatMoney(selected.paid)} €`;
   document.querySelector("#late-summary").textContent = `${formatMoney(selectedLate)} €`;
   document.querySelector("#upcoming-summary").textContent = `${formatMoney(selectedRemaining - selectedLate)} €`;
-  document.querySelector("#home-collected").textContent = `${formatMoney(cashCollected)} €`;
-  document.querySelector("#home-available").textContent = `${formatMoney(cashCollected)} €`;
-  document.querySelector("#admin-cash-total").textContent = `${formatMoney(cashCollected)} €`;
+  document.querySelector("#admin-cash-total").textContent = `${formatMoney(cashBalance)} €`;
   document.querySelector("#admin-payment-count").textContent = writablePaymentCount;
   document.querySelector("#admin-payment-count").nextElementSibling.textContent = writablePaymentCount ? `${writablePaymentCount} opération${writablePaymentCount > 1 ? "s" : ""}` : "Historique vide";
 }
@@ -724,9 +831,11 @@ function renderAll() {
   renderMemberStatuses();
   renderFundSettings();
   renderPaymentOptions();
+  renderExpenseOptions();
   renderScheduleOptions();
   renderSummaries();
   renderIdentity();
+  updateNotificationDot();
   document.querySelector("#slow-speech-toggle").checked = state.settings.slowSpeech;
 }
 
@@ -780,7 +889,7 @@ function contributionsSpeech() {
 }
 
 function fundSpeech() {
-  if (canRecordCash()) return `Les deux caisses contiennent ${formatMoney(totalCollected())} euros enregistrés en espèces. Il n'y a aucune dépense enregistrée.`;
+  if (canRecordCash()) return `Les deux caisses ont encaissé ${formatMoney(totalCollected())} euros, dépensé ${formatMoney(totalExpenses())} euros, et disposent de ${formatMoney(availableTotal())} euros.`;
   return `Vos versements en espèces dans les deux caisses totalisent ${formatMoney(personalCollected())} euros.`;
 }
 
@@ -854,16 +963,27 @@ function executeVoiceCommand(command) {
 
 function openQuickPayment() {
   if (!canRecordCash()) return showToast("Autorisation Supabase insuffisante.");
-  paymentMonthCount = 1;
-  document.querySelectorAll("[data-month-count]").forEach((button) => button.classList.toggle("active", button.dataset.monthCount === "1"));
   const preferredFund = state.contributions.find((item) => item.id === adminFundView && item.backendId && canWriteFund(item.id))
     ? adminFundView
     : state.contributions.find((item) => item.backendId && canWriteFund(item.id))?.id;
   if (preferredFund) document.querySelector("#payment-contribution").value = preferredFund;
   document.querySelectorAll("[data-quick-fund]").forEach((button) => button.classList.toggle("active", button.dataset.quickFund === preferredFund));
   setDefaultPaymentDates();
-  updateQuickPaymentSummary();
+  updateQuickPaymentSummary({ clearAmount: true });
   openSheet("payment-sheet");
+}
+
+function openExpense() {
+  if (!canRecordCash()) return showToast("Autorisation de dépense insuffisante.");
+  const preferredFund = state.contributions.find((item) => item.id === adminFundView && canWriteFund(item.id))
+    ? adminFundView
+    : writableFundCodes()[0];
+  if (preferredFund) document.querySelector("#expense-fund").value = preferredFund;
+  document.querySelector("#expense-amount").value = "";
+  document.querySelector("#expense-reason").value = "";
+  setDefaultPaymentDates();
+  renderExpenseOptions();
+  openSheet("expense-sheet");
 }
 
 function openFundConfig(code) {
@@ -993,6 +1113,41 @@ async function deleteFamilyMember(event) {
   }
 }
 
+function openReversePayment(paymentId) {
+  if (!isAdministrator()) return showToast("Seul un administrateur peut annuler un paiement.");
+  const payment = state.payments.find((item) => item.id === paymentId);
+  if (!payment) return showToast("Paiement introuvable ou déjà annulé.");
+  document.querySelector("#reverse-payment-id").value = payment.id;
+  document.querySelector("#reverse-payment-reason").value = "";
+  document.querySelector("#reverse-payment-message").textContent = `${formatMoney(payment.amount)} € • ${payment.member} • ${payment.contribution}. La trace restera visible dans Activité.`;
+  openSheet("reverse-payment-modal");
+  document.querySelector("#reverse-payment-reason").focus({ preventScroll: true });
+}
+
+async function reverseCashPayment(event) {
+  event.preventDefault();
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
+  const paymentId = document.querySelector("#reverse-payment-id").value;
+  const reason = document.querySelector("#reverse-payment-reason").value.trim();
+  if (reason.length < 3) return showToast("Indiquez un motif de trois caractères minimum.");
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = "Annulation…";
+  try {
+    const reversed = await window.JappoBackend.reverseCashPayment(paymentId, reason);
+    const reversedPayment = Array.isArray(reversed) ? reversed[0] : reversed;
+    await window.JappoBackend.sendPaymentPush(reversedPayment?.id || paymentId, "reversed").catch(() => null);
+    await syncFromBackend({ quiet: true });
+    closeSheets();
+    showToast("Paiement annulé. La trace et le motif sont conservés dans Activité.");
+  } catch (error) {
+    showToast(error.message || "Le paiement n’a pas pu être annulé.");
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Annuler et conserver la trace";
+  }
+}
+
 async function copyMemberCode() {
   const code = document.querySelector("#member-access-code").textContent.trim();
   try {
@@ -1005,7 +1160,7 @@ async function copyMemberCode() {
 
 async function submitMemberSchedule(event) {
   event.preventDefault();
-  if (!canRecordCash()) return showToast("Autorisation de saisie requise.");
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
   const memberId = document.querySelector("#schedule-member").value;
   const fundId = document.querySelector("#schedule-fund").value;
   const start = document.querySelector("#schedule-start").value;
@@ -1072,7 +1227,7 @@ async function recordCashPayment(event) {
   submit.disabled = true;
   submit.textContent = "Enregistrement sécurisé…";
   try {
-    await window.JappoBackend.recordCashPayment({
+    const recorded = await window.JappoBackend.recordCashPayment({
       p_family_id: workspace.membership.family_id,
       p_fund_id: contribution.backendId,
       p_member_id: memberId,
@@ -1080,9 +1235,10 @@ async function recordCashPayment(event) {
       p_payment_date: dateValue,
       p_note: note || null
     });
+    const recordedPayment = Array.isArray(recorded) ? recorded[0] : recorded;
+    await window.JappoBackend.sendPaymentPush(recordedPayment?.id, "recorded").catch(() => null);
     await syncFromBackend({ quiet: true });
     event.target.reset();
-    paymentMonthCount = 1;
     renderPaymentOptions();
     setDefaultPaymentDates();
     closeSheets();
@@ -1100,9 +1256,47 @@ async function recordCashPayment(event) {
   }
 }
 
+async function recordCashExpense(event) {
+  event.preventDefault();
+  if (!canRecordCash() || !backendSession) return showToast("Autorisation Supabase insuffisante.");
+  const contributionId = document.querySelector("#expense-fund").value;
+  const contribution = state.contributions.find((item) => item.id === contributionId);
+  const amount = Number(document.querySelector("#expense-amount").value);
+  const dateValue = document.querySelector("#expense-date").value;
+  const reason = document.querySelector("#expense-reason").value.trim();
+  if (!contribution?.backendId || !canWriteFund(contributionId) || !Number.isFinite(amount) || amount <= 0 || !dateValue || reason.length < 3) {
+    return showToast("Vérifiez la caisse, le montant, la date et le motif.");
+  }
+  if (amount > fundBalance(contributionId) + 0.001) return showToast(`Le solde disponible est de ${formatMoney(fundBalance(contributionId))} €.`);
+
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = "Enregistrement sécurisé…";
+  try {
+    await window.JappoBackend.recordCashExpense({
+      p_family_id: workspace.membership.family_id,
+      p_fund_id: contribution.backendId,
+      p_amount: amount,
+      p_expense_date: dateValue,
+      p_reason: reason
+    });
+    await syncFromBackend({ quiet: true });
+    event.target.reset();
+    setDefaultPaymentDates();
+    closeSheets();
+    showToast(`Dépense de ${formatMoney(amount)} € enregistrée dans ${contribution.name}.`);
+  } catch (error) {
+    showToast(error.message || "La dépense n’a pas pu être enregistrée.");
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Enregistrer la dépense";
+  }
+}
+
 function setDefaultPaymentDates() {
   const now = new Date();
   document.querySelector("#payment-date").valueAsDate = now;
+  document.querySelector("#expense-date").valueAsDate = now;
 }
 
 function showToast(message) {
@@ -1136,6 +1330,7 @@ async function syncFromBackend({ quiet = false } = {}) {
   } finally {
     syncing = false;
     renderAll();
+    maybeNotifyDueSummary().catch(() => null);
   }
 }
 
@@ -1271,18 +1466,159 @@ async function authOrSync() {
   showToast("Données Supabase actualisées.");
 }
 
+function pushSupported() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replaceAll("-", "+").replaceAll("_", "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
+}
+
+async function getServiceWorkerRegistration() {
+  if (!("serviceWorker" in navigator)) throw new Error("Service worker indisponible sur ce navigateur.");
+  const existing = await navigator.serviceWorker.getRegistration();
+  return existing || navigator.serviceWorker.register("./sw.js");
+}
+
+function renderNotificationHistory() {
+  const container = document.querySelector("#notification-history");
+  const activities = state.activities.slice(0, 6);
+  container.innerHTML = activities.length
+    ? `<h3>Alertes récentes</h3>${activities.map((activity) => `<article><span>${activity.reversed || activity.expense ? "−" : "+"}</span><div><strong>${escapeHTML(activity.title)}</strong><small>${escapeHTML(activity.text)}<br>${escapeHTML(activity.time)}</small></div></article>`).join("")}`
+    : '<div class="empty-state compact-empty"><span>🔔</span><strong>Aucune alerte récente</strong></div>';
+}
+
+function updateNotificationDot() {
+  const latestId = state.activities[0]?.id || "";
+  const lastSeen = localStorage.getItem(NOTIFICATION_SEEN_KEY) || "";
+  document.querySelector("#notification-dot").classList.toggle("hidden", !latestId || latestId === lastSeen);
+}
+
+async function refreshPushStatus() {
+  const title = document.querySelector("#push-status-title");
+  const detail = document.querySelector("#push-status-detail");
+  const button = document.querySelector("#push-toggle-button");
+  button.disabled = false;
+  if (!pushSupported()) {
+    title.textContent = "Notifications non compatibles";
+    detail.textContent = "Installez la PWA ou utilisez un navigateur compatible avec les notifications push.";
+    button.textContent = "Indisponible sur cet appareil";
+    button.disabled = true;
+    return false;
+  }
+  if (!backendSession || !workspace?.membership?.active) {
+    title.textContent = "Connexion requise";
+    detail.textContent = "Connectez-vous à votre fiche avant d’activer les notifications.";
+    button.textContent = "Se connecter d’abord";
+    button.disabled = true;
+    return false;
+  }
+  if (!window.__JAPPO_CONFIG__?.vapidPublicKey) {
+    title.textContent = "Service push en cours de configuration";
+    detail.textContent = "La clé de notification n’est pas encore disponible sur ce déploiement.";
+    button.textContent = "Configuration requise";
+    button.disabled = true;
+    return false;
+  }
+  const registration = await getServiceWorkerRegistration();
+  const subscription = await registration.pushManager.getSubscription();
+  const active = Notification.permission === "granted" && Boolean(subscription);
+  title.textContent = active ? "Notifications activées" : Notification.permission === "denied" ? "Notifications bloquées" : "Notifications désactivées";
+  detail.textContent = active
+    ? "Cet appareil recevra les paiements enregistrés, les annulations et les rappels de situation."
+    : Notification.permission === "denied"
+      ? "Autorisez les notifications dans les réglages du navigateur ou du téléphone."
+      : "Activez-les pour recevoir les confirmations de paiement et d’annulation.";
+  button.textContent = active ? "Désactiver sur cet appareil" : "Activer les notifications";
+  button.disabled = Notification.permission === "denied";
+  return active;
+}
+
+async function openNotifications() {
+  renderNotificationHistory();
+  if (state.activities[0]?.id) localStorage.setItem(NOTIFICATION_SEEN_KEY, state.activities[0].id);
+  updateNotificationDot();
+  openSheet("notification-sheet");
+  await refreshPushStatus().catch((error) => {
+    document.querySelector("#push-status-detail").textContent = error.message || "État des notifications indisponible.";
+  });
+}
+
+async function togglePushNotifications() {
+  if (!pushSupported() || !backendSession || !workspace?.membership?.active) return refreshPushStatus();
+  const button = document.querySelector("#push-toggle-button");
+  button.disabled = true;
+  button.textContent = "Mise à jour…";
+  try {
+    const registration = await getServiceWorkerRegistration();
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) {
+      await window.JappoBackend.removePushSubscription(existing.endpoint).catch(() => null);
+      await existing.unsubscribe();
+      showToast("Notifications désactivées sur cet appareil.");
+    } else {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") throw new Error("Autorisation de notification refusée.");
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(window.__JAPPO_CONFIG__.vapidPublicKey)
+      });
+      const serialized = subscription.toJSON();
+      await window.JappoBackend.registerPushSubscription({
+        p_endpoint: subscription.endpoint,
+        p_p256dh: serialized.keys?.p256dh || "",
+        p_auth_key: serialized.keys?.auth || "",
+        p_user_agent: navigator.userAgent.slice(0, 300)
+      });
+      await registration.showNotification("Notifications activées", {
+        body: "Vous recevrez ici les confirmations et corrections de paiement.",
+        icon: "./assets/icon.svg",
+        badge: "./assets/icon.svg",
+        tag: "push-enabled"
+      });
+      showToast("Notifications activées sur cet appareil.");
+    }
+  } catch (error) {
+    showToast(error.message || "Les notifications n’ont pas pu être configurées.");
+  } finally {
+    await refreshPushStatus().catch(() => null);
+  }
+}
+
+async function maybeNotifyDueSummary() {
+  if (!pushSupported() || Notification.permission !== "granted" || !workspace?.membership?.active) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const reminderKey = `jappo-cotiz-due-reminder-${workspace.membership.id}`;
+  if (localStorage.getItem(reminderKey) === today || outstandingTotal() <= 0) return;
+  const registration = await getServiceWorkerRegistration();
+  if (!await registration.pushManager.getSubscription()) return;
+  await registration.showNotification("Votre situation Jàppoo", {
+    body: `Il vous reste ${formatMoney(outstandingTotal())} € à régulariser sur vos cotisations.`,
+    icon: "./assets/icon.svg",
+    badge: "./assets/icon.svg",
+    tag: `due-summary-${today}`,
+    data: { url: "/?notification=reminder" }
+  });
+  localStorage.setItem(reminderKey, today);
+}
+
 function handleAction(action) {
   const personalPaymentCount = workspace?.membership
     ? state.payments.filter((payment) => payment.memberId === workspace.membership.id).length
     : 0;
   const messages = {
     "family-switch": "Espace familial actif : Ma famille.",
-    notifications: state.activities.length ? `${state.activities.length} activité récente.` : "Aucune notification pour le moment.",
     documents: personalPaymentCount ? `${personalPaymentCount} reçu${personalPaymentCount > 1 ? "s" : ""} disponible${personalPaymentCount > 1 ? "s" : ""}.` : "Aucun reçu disponible pour le moment.",
     "admin-profile": "Accès réservé à une personne habilitée."
   };
   if (messages[action]) return showToast(messages[action]);
+  if (action === "notifications") return openNotifications();
+  if (action === "toggle-push") return togglePushNotifications();
   if (action === "record-cash") return openQuickPayment();
+  if (action === "record-expense") return openExpense();
   if (action === "send-login-link") return sendLoginLink();
   if (action === "copy-member-code") return copyMemberCode();
   if (action === "auth-or-signout") return authOrSignOut();
@@ -1346,14 +1682,14 @@ function setupEvents() {
     if (quickFundButton) {
       document.querySelector("#payment-contribution").value = quickFundButton.dataset.quickFund;
       document.querySelectorAll("[data-quick-fund]").forEach((button) => button.classList.toggle("active", button === quickFundButton));
-      updateQuickPaymentSummary();
+      updateQuickPaymentSummary({ clearAmount: true });
       return;
     }
-    const monthCountButton = event.target.closest("[data-month-count]");
-    if (monthCountButton) {
-      paymentMonthCount = monthCountButton.dataset.monthCount === "all" ? Number.POSITIVE_INFINITY : Number(monthCountButton.dataset.monthCount);
-      document.querySelectorAll("[data-month-count]").forEach((button) => button.classList.toggle("active", button === monthCountButton));
-      updateQuickPaymentSummary();
+    const expenseFundButton = event.target.closest("[data-expense-fund]");
+    if (expenseFundButton) {
+      document.querySelector("#expense-fund").value = expenseFundButton.dataset.expenseFund;
+      document.querySelectorAll("[data-expense-fund]").forEach((button) => button.classList.toggle("active", button === expenseFundButton));
+      updateExpenseBalancePreview();
       return;
     }
     const editFundButton = event.target.closest("[data-edit-fund]");
@@ -1378,6 +1714,8 @@ function setupEvents() {
     if (resetCodeButton) return resetMemberLoginCode(resetCodeButton.dataset.resetMemberCode, resetCodeButton);
     const deleteMemberButton = event.target.closest("[data-delete-member]");
     if (deleteMemberButton) return openDeleteMember(deleteMemberButton.dataset.deleteMember);
+    const reversePaymentButton = event.target.closest("[data-reverse-payment]");
+    if (reversePaymentButton) return openReversePayment(reversePaymentButton.dataset.reversePayment);
     const actionButton = event.target.closest("[data-action]");
     if (actionButton) return handleAction(actionButton.dataset.action);
     const voiceButton = event.target.closest("[data-voice-command]");
@@ -1390,6 +1728,8 @@ function setupEvents() {
   });
   document.querySelector("#modal-backdrop").addEventListener("click", closeSheets);
   document.querySelector("#payment-form").addEventListener("submit", recordCashPayment);
+  document.querySelector("#expense-form").addEventListener("submit", recordCashExpense);
+  document.querySelector("#reverse-payment-form").addEventListener("submit", reverseCashPayment);
   document.querySelector("#delete-member-form").addEventListener("submit", deleteFamilyMember);
   document.querySelector("#fund-config-form").addEventListener("submit", submitFundConfiguration);
   document.querySelector("#member-schedule-form").addEventListener("submit", submitMemberSchedule);
@@ -1397,9 +1737,21 @@ function setupEvents() {
   document.querySelector("#admin-auth-form").addEventListener("submit", submitAuth);
   document.querySelector("#member-login-form").addEventListener("submit", submitMemberLogin);
   document.querySelector("#membership-request-form").addEventListener("submit", submitMembershipRequest);
-  document.querySelector("#payment-member").addEventListener("change", updateQuickPaymentSummary);
-  document.querySelector("#payment-contribution").addEventListener("change", updateQuickPaymentSummary);
-  document.querySelector("#payment-amount").addEventListener("input", () => updatePaymentAllocationPreview({ syncChips: true }));
+  document.querySelector("#payment-member").addEventListener("change", () => updateQuickPaymentSummary({ clearAmount: true }));
+  document.querySelector("#payment-contribution").addEventListener("change", () => updateQuickPaymentSummary({ clearAmount: true }));
+  document.querySelector("#payment-amount").addEventListener("input", updatePaymentAllocationPreview);
+  document.querySelector("#expense-fund").addEventListener("change", updateExpenseBalancePreview);
+  document.querySelector("#expense-amount").addEventListener("input", updateExpenseBalancePreview);
+  document.querySelector("#member-access-search").addEventListener("input", (event) => {
+    memberAccessSearch = event.target.value;
+    memberAccessInitialized = true;
+    renderMemberAccess();
+  });
+  document.querySelector("#member-access-filter").addEventListener("change", (event) => {
+    memberAccessFilter = event.target.value;
+    memberAccessInitialized = true;
+    renderMemberAccess();
+  });
   document.querySelector("#schedule-member").addEventListener("change", hydrateScheduleForm);
   document.querySelector("#schedule-fund").addEventListener("change", hydrateScheduleForm);
   document.querySelector("#schedule-start").addEventListener("change", updateSchedulePreview);

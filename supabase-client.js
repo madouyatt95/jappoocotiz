@@ -183,6 +183,28 @@
     return payload;
   }
 
+  async function invokeFunction(name, body) {
+    let session = await initializeSession();
+    if (!session) throw new Error("Connectez-vous pour envoyer une notification.");
+    const request = async () => fetch(`${baseUrl}/functions/v1/${name}`, {
+      method: "POST",
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    let response = await request();
+    if (response.status === 401) {
+      session = await refreshSession(session);
+      response = await request();
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || payload?.message || "La notification n’a pas pu être envoyée.");
+    return payload;
+  }
+
   function query(table, parameters) {
     return rest(`${table}?${new URLSearchParams(parameters).toString()}`);
   }
@@ -210,17 +232,17 @@
       limit: "1"
     });
     const membership = memberships[0] || null;
-    if (!membership) return { user, membership: null, family: null, funds: [], periods: [], payments: [], activityPayments: [], members: [], schedules: [] };
+    if (!membership) return { user, membership: null, family: null, funds: [], periods: [], payments: [], expenses: [], activityPayments: [], members: [], schedules: [] };
 
     const approved = membership.active && membership.approval_status === "approved";
     if (!approved) {
-      return { user, membership, family: null, funds: [], periods: [], payments: [], activityPayments: [], members: [membership], schedules: [] };
+      return { user, membership, family: null, funds: [], periods: [], payments: [], expenses: [], activityPayments: [], members: [membership], schedules: [] };
     }
 
     const familyId = membership.family_id;
     const authorized = membership.access_level === "write" && ["admin", "treasurer", "cash_collector"].includes(membership.role);
     const administrator = authorized && membership.role === "admin";
-    const [families, funds, periods, payments, activityPayments, members, schedules] = await Promise.all([
+    const [families, funds, periods, payments, expenses, activityPayments, members, schedules] = await Promise.all([
       query("family_spaces", { select: "id,name,currency", id: `eq.${familyId}`, limit: "1" }),
       query("funds", { select: "id,code,name,description,monthly_amount,frequency,start_date,due_day,display_order,active", family_id: `eq.${familyId}`, active: "eq.true", order: "display_order.asc" }),
       query("contribution_periods", {
@@ -234,6 +256,13 @@
         reversed_at: "is.null",
         order: "payment_date.desc,created_at.desc"
       }),
+      authorized
+        ? query("cash_expenses", {
+          select: "id,family_id,fund_id,amount,reason,expense_date,spent_by,created_at",
+          family_id: `eq.${familyId}`,
+          order: "expense_date.desc,created_at.desc"
+        })
+        : Promise.resolve([]),
       callRpc("list_payment_activity", { p_family_id: familyId }),
       authorized
         ? query("family_members", {
@@ -258,6 +287,7 @@
       funds,
       periods,
       payments,
+      expenses,
       activityPayments,
       members,
       schedules
@@ -299,6 +329,10 @@
     return callRpc("record_cash_payment", payment);
   }
 
+  async function recordCashExpense(expense) {
+    return callRpc("record_cash_expense", expense);
+  }
+
   async function configureFund(configuration) {
     return callRpc("configure_fund", configuration);
   }
@@ -322,6 +356,22 @@
     });
   }
 
+  async function reverseCashPayment(paymentId, reason) {
+    return callRpc("reverse_cash_payment", { payment_id: paymentId, reason });
+  }
+
+  async function registerPushSubscription(subscription) {
+    return callRpc("register_push_subscription", subscription);
+  }
+
+  async function removePushSubscription(endpoint) {
+    return callRpc("remove_push_subscription", { p_endpoint: endpoint });
+  }
+
+  async function sendPaymentPush(paymentId, eventType) {
+    return invokeFunction("send-payment-push", { payment_id: paymentId, event_type: eventType });
+  }
+
   global.JappoBackend = Object.freeze({
     configured,
     initializeSession,
@@ -335,10 +385,15 @@
     requestPseudoMembership,
     signInMember,
     recordCashPayment,
+    recordCashExpense,
     configureFund,
     reviewMemberAccess,
     resetMemberLoginCode,
     setMemberFundSchedule,
-    deleteFamilyMember
+    deleteFamilyMember,
+    reverseCashPayment,
+    registerPushSubscription,
+    removePushSubscription,
+    sendPaymentPush
   });
 })(window);

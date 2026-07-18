@@ -13,7 +13,8 @@ await copyFile(join(root, "assets/icon.svg"), join(output, "assets/icon.svg"));
 
 const publicConfig = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+  vapidPublicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ""
 };
 
 await writeFile(

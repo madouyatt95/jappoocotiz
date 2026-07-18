@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=10" />
+    <link rel="stylesheet" href="./styles.css?v=11" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -32,6 +32,7 @@
           </button>
           <button class="icon-btn notification-btn" type="button" data-action="notifications" aria-label="Voir les notifications">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM14 21h-4"/></svg>
+            <span class="notification-dot hidden" id="notification-dot" aria-hidden="true"></span>
           </button>
         </div>
       </header>
@@ -86,18 +87,6 @@
             <div class="contribution-list" id="home-contribution-list"></div>
           </section>
 
-          <section class="fund-snapshot" aria-labelledby="fund-title">
-            <div class="fund-heading">
-              <span class="feature-icon amber"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v10H4zM7 10V7a5 5 0 0 1 10 0v3M8 14h8M8 17h5"/></svg></span>
-              <div><p class="eyebrow">Vue globale</p><h2 id="fund-title">Les caisses</h2></div>
-              <button class="icon-btn subtle" type="button" data-nav="caisse" aria-label="Voir les caisses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
-            </div>
-            <div class="fund-numbers">
-              <div><small id="home-collected-label">Mes versements</small><strong id="home-collected">0 €</strong></div>
-              <div><small id="home-available-label">Enregistrés</small><strong id="home-available">0 €</strong></div>
-            </div>
-            <p class="goal-caption">Caisse famille et Caisse décès uniquement.</p>
-          </section>
         </section>
 
         <section class="page" id="page-cotisations" data-page="cotisations" aria-labelledby="cotisations-title">
@@ -134,7 +123,7 @@
             <div class="cash-hero-head"><span id="cash-balance-label">Mes versements enregistrés</span><span class="privacy-badge" id="cash-privacy-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>Vue personnelle</span></div>
             <strong id="cash-balance">0,00 €</strong>
             <p id="cash-updated">Aucune opération enregistrée</p>
-            <div class="cash-grid"><div><small id="cash-in-label">Mes entrées en espèces</small><b id="cash-in">+ 0 €</b></div><div><small>Dépenses</small><b>− 0 €</b></div></div>
+            <div class="cash-grid"><div><small id="cash-in-label">Mes entrées en espèces</small><b id="cash-in">+ 0 €</b></div><div><small>Dépenses</small><b id="cash-out">− 0 €</b></div></div>
           </article>
           <article class="fund-period-card" id="fund-period-card"></article>
           <section class="section-block">
@@ -145,10 +134,10 @@
 
         <section class="page" id="page-activite" data-page="activite" aria-labelledby="activite-title">
           <div class="page-heading"><div><p class="eyebrow">Registre familial</p><h1 id="activite-title">Mouvements généraux</h1></div></div>
-          <div class="notice-card"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><strong>Activité des paiements</strong><p>Tous les membres validés voient les mouvements généraux. Les identités restent réservées aux personnes ayant un droit de saisie.</p></div></div>
+          <div class="notice-card"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><strong>Registre des mouvements</strong><p>Les encaissements, dépenses et annulations sont tracés. Les identités restent réservées aux personnes ayant un droit de saisie.</p></div></div>
           <div class="activity-summary" aria-label="Résumé des mouvements généraux">
             <article><small>Mouvements</small><strong id="activity-movement-count">0</strong></article>
-            <article><small>Paiements actifs</small><strong id="activity-collected-total">0 €</strong></article>
+            <article><small>Solde net</small><strong id="activity-collected-total">0 €</strong></article>
             <article><small>Dernière activité</small><strong id="activity-latest">Aucun mouvement</strong></article>
           </div>
           <div class="activity-timeline" id="activity-list"></div>
@@ -191,30 +180,37 @@
           </div>
           <div class="admin-content">
             <div class="admin-role"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><small>Autorisation Supabase vérifiée</small><strong id="admin-role-label">Personne habilitée</strong></div><em class="cash-only-badge">Espèces uniquement</em></div>
-            <section class="section-block member-access-section hidden" id="member-access-section" aria-labelledby="member-access-title">
-              <div class="section-heading"><div><p class="eyebrow">Validation obligatoire</p><h2 id="member-access-title">Comptes et droits</h2></div><span class="count-badge" id="pending-member-count">0</span></div>
+            <details class="management-panel member-access-section hidden" id="member-access-section">
+              <summary class="management-summary"><span class="management-icon">👥</span><span><small>Validation obligatoire</small><strong id="member-access-title">Comptes et droits</strong></span><span class="count-badge" id="pending-member-count">0</span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content">
               <p class="section-help">Chaque nouveau compte reste bloqué jusqu’à votre choix : lecture seule, saisie sur la caisse Famille, la caisse Décès ou les deux.</p>
+              <div class="member-access-toolbar"><label><span class="visually-hidden">Rechercher un membre</span><input id="member-access-search" type="search" placeholder="Rechercher un nom ou pseudo" /></label><label><span class="visually-hidden">Filtrer les comptes</span><select id="member-access-filter"><option value="all">Tous</option><option value="pending">En attente</option><option value="approved">Validés</option><option value="rejected">Refusés</option></select></label></div>
+              <p class="member-access-result" id="member-access-result"></p>
               <div class="member-access-list" id="member-access-list"></div>
-            </section>
+              </div>
+            </details>
             <div class="admin-kpis">
-              <article><span class="kpi-icon green">↗</span><small>Espèces encaissées</small><strong id="admin-cash-total">0 €</strong><em>Solde actuel</em></article>
+              <article><span class="kpi-icon green">↗</span><small>Solde des caisses</small><strong id="admin-cash-total">0 €</strong><em>Encaissements moins dépenses</em></article>
               <article><span class="kpi-icon orange">#</span><small>Paiements enregistrés</small><strong id="admin-payment-count">0</strong><em>Historique vide</em></article>
               <article><span class="kpi-icon blue">2</span><small>Caisses actives</small><strong>2</strong><em>Famille et décès</em></article>
             </div>
             <section class="section-block admin-actions" aria-labelledby="quick-actions-title">
-              <div class="section-heading"><div><p class="eyebrow">Action autorisée</p><h2 id="quick-actions-title">Paiement en espèces</h2></div></div>
-              <button class="primary-btn full" type="button" data-action="record-cash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Ajouter rapidement</button>
+              <div class="section-heading"><div><p class="eyebrow">Actions autorisées</p><h2 id="quick-actions-title">Mouvements de caisse</h2></div></div>
+              <div class="management-action-grid"><button class="primary-btn full" type="button" data-action="record-cash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Ajouter un paiement</button><button class="secondary-btn full" type="button" data-action="record-expense"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M15 8l4 4-4 4"/></svg>Ajouter une dépense</button></div>
             </section>
-            <section class="section-block" aria-labelledby="member-status-title">
-              <div class="section-heading"><div><p class="eyebrow">Mensualités</p><h2 id="member-status-title">Situation des membres</h2></div></div>
+            <details class="management-panel">
+              <summary class="management-summary"><span class="management-icon">◎</span><span><small>Mensualités</small><strong id="member-status-title">Situation des membres</strong></span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content">
               <div class="fund-switch compact" role="tablist" aria-label="Caisse pour la situation des membres">
                 <button class="active" type="button" role="tab" aria-selected="true" data-admin-fund="family">Famille</button>
                 <button type="button" role="tab" aria-selected="false" data-admin-fund="death">Décès</button>
               </div>
               <div class="member-status-list" id="member-status-list"></div>
-            </section>
-            <section class="section-block" id="member-schedule-section" aria-labelledby="member-schedule-title">
-              <div class="section-heading"><div><p class="eyebrow">Rétroactif depuis 2021</p><h2 id="member-schedule-title">Définir les mensualités dues</h2></div></div>
+              </div>
+            </details>
+            <details class="management-panel" id="member-schedule-section">
+              <summary class="management-summary"><span class="management-icon">▦</span><span><small>Administrateur uniquement</small><strong id="member-schedule-title">Mensualités dues</strong></span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content">
               <p class="section-help">Choisissez un membre, une caisse et la période exacte. Les paiements existants sont conservés.</p>
               <form class="schedule-form" id="member-schedule-form">
                 <label class="form-field"><span>Membre</span><select id="schedule-member" required><option value="">Choisir un membre</option></select></label>
@@ -223,15 +219,20 @@
                 <div class="schedule-preview" id="schedule-preview"><span>Période</span><strong>Sélectionnez un membre et une caisse</strong><small>Les mensualités manquantes seront générées automatiquement.</small></div>
                 <button class="primary-btn full" type="submit">Calculer les mensualités dues</button>
               </form>
-            </section>
-            <section class="section-block" aria-labelledby="fund-settings-title">
-              <div class="section-heading"><div><p class="eyebrow">Paramètres</p><h2 id="fund-settings-title">Configurer les caisses</h2></div></div>
+              </div>
+            </details>
+            <details class="management-panel" id="fund-settings-panel">
+              <summary class="management-summary"><span class="management-icon">⚙</span><span><small>Administrateur uniquement</small><strong id="fund-settings-title">Configurer les caisses</strong></span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content">
               <div class="fund-settings-list" id="fund-settings-list"></div>
-            </section>
-            <section class="pending-section" aria-labelledby="cash-history-title">
-              <div class="section-heading"><div><p class="eyebrow">Traçabilité</p><h2 id="cash-history-title">Derniers paiements en espèces</h2></div></div>
+              </div>
+            </details>
+            <details class="management-panel" open>
+              <summary class="management-summary"><span class="management-icon">↕</span><span><small>Traçabilité</small><strong id="cash-history-title">Derniers paiements</strong></span><b aria-hidden="true">⌄</b></summary>
+              <div class="management-panel-content">
               <div id="admin-cash-payments"></div>
-            </section>
+              </div>
+            </details>
           </div>
         </section>
       </main>
@@ -265,11 +266,23 @@
         <label class="form-field"><span>1. Membre</span><select id="payment-member" required><option value="">Choisir un membre</option></select></label>
         <div class="form-field"><span>2. Caisse</span><div class="quick-fund-grid" id="quick-fund-grid"></div><select class="visually-hidden" id="payment-contribution" required aria-label="Caisse concernée"></select></div>
         <div class="quick-payment-summary" id="quick-payment-summary"><span>Reste à payer</span><strong>0 €</strong><small>Sélectionnez un membre et une caisse</small></div>
-        <div class="form-field"><span>3. Nombre de mensualités</span><div class="month-chips" role="group" aria-label="Nombre de mensualités"><button class="active" type="button" data-month-count="1">1 mois</button><button type="button" data-month-count="3">3 mois</button><button type="button" data-month-count="6">6 mois</button><button type="button" data-month-count="all">Tout</button></div></div>
-        <div class="form-grid"><label class="form-field"><span>Montant reçu</span><div class="money-input"><input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /><b>€</b></div></label><label class="form-field"><span>Date</span><input id="payment-date" type="date" required /></label></div>
+        <div class="form-grid"><label class="form-field"><span>3. Montant reçu</span><div class="money-input"><input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /><b>€</b></div></label><label class="form-field"><span>Date</span><input id="payment-date" type="date" required /></label></div>
         <div class="payment-allocation-preview" id="payment-allocation-preview" role="status" aria-live="polite"><span>Affectation automatique</span><strong>Saisissez un montant</strong><small>Les arriérés seront régularisés du mois le plus ancien au plus récent.</small></div>
         <details class="payment-details"><summary>Ajouter une note</summary><label class="form-field"><span>Note facultative</span><input id="payment-note" type="text" maxlength="160" placeholder="Ex. reçu remis au membre" /></label><label class="form-field"><span>Moyen de paiement</span><input id="payment-method" type="text" value="Espèces" readonly /></label></details>
         <button class="primary-btn full" type="submit">Valider l’encaissement</button>
+      </form>
+    </section>
+
+    <section class="bottom-sheet hidden" id="expense-sheet" role="dialog" aria-modal="true" aria-labelledby="expense-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Sortie de caisse</p><h2 id="expense-title">Enregistrer une dépense</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <form id="expense-form">
+        <div class="notice-card compact-notice"><span class="feature-icon soft-amber">−</span><div><strong>Historique obligatoire</strong><p>La dépense et son motif seront visibles dans Activité.</p></div></div>
+        <div class="form-field"><span>1. Caisse débitée</span><div class="quick-fund-grid" id="expense-fund-grid"></div><select class="visually-hidden" id="expense-fund" required aria-label="Caisse débitée"></select></div>
+        <div class="expense-balance-preview" id="expense-balance-preview"><span>Solde disponible</span><strong>0 €</strong><small>Choisissez une caisse</small></div>
+        <div class="form-grid"><label class="form-field"><span>2. Montant dépensé</span><div class="money-input"><input id="expense-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /><b>€</b></div></label><label class="form-field"><span>Date</span><input id="expense-date" type="date" required /></label></div>
+        <label class="form-field"><span>3. Motif</span><textarea id="expense-reason" minlength="3" maxlength="160" required placeholder="Ex. aide médicale, frais bancaires…"></textarea></label>
+        <button class="primary-btn full" type="submit">Enregistrer la dépense</button>
       </form>
     </section>
 
@@ -303,6 +316,15 @@
         <button type="button" data-voice-command="details"><span>📋</span><strong>Mes deux caisses</strong><small>Situation détaillée</small></button>
       </div>
       <p class="voice-privacy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg>Consultation vocale uniquement. Aucune opération financière n’est possible.</p>
+    </section>
+
+    <section class="bottom-sheet hidden" id="notification-sheet" role="dialog" aria-modal="true" aria-labelledby="notification-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Alertes de l’appareil</p><h2 id="notification-title">Notifications</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div class="notice-card compact-notice" id="push-status-card"><span class="feature-icon soft-amber">🔔</span><div><strong id="push-status-title">Notifications désactivées</strong><p id="push-status-detail">Activez-les pour recevoir les confirmations de paiement et d’annulation.</p></div></div>
+      <button class="primary-btn full" id="push-toggle-button" type="button" data-action="toggle-push">Activer les notifications</button>
+      <p class="push-help">Les alertes sont personnelles à cet appareil. Vous pouvez les désactiver à tout moment.</p>
+      <div class="notification-history" id="notification-history"></div>
     </section>
 
     <section class="bottom-sheet hidden" id="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="auth-title">
@@ -370,9 +392,21 @@
       </form>
     </section>
 
+    <section class="center-modal reverse-payment-modal hidden" id="reverse-payment-modal" role="dialog" aria-modal="true" aria-labelledby="reverse-payment-title">
+      <span class="confirmation-icon danger-confirmation">↶</span>
+      <h2 id="reverse-payment-title">Annuler ce paiement ?</h2>
+      <p id="reverse-payment-message">Le paiement restera visible dans l’activité avec le motif et le nom de l’administrateur.</p>
+      <form id="reverse-payment-form">
+        <input id="reverse-payment-id" type="hidden" />
+        <label class="form-field delete-confirm-field"><span>Motif obligatoire</span><textarea id="reverse-payment-reason" minlength="3" maxlength="160" required placeholder="Ex. paiement saisi deux fois"></textarea></label>
+        <button class="danger-btn full" type="submit">Annuler et conserver la trace</button>
+        <button class="link-login-button" type="button" data-action="close-sheets">Retour</button>
+      </form>
+    </section>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
-    <script src="./supabase-client.js?v=8"></script>
-    <script src="./app.js?v=11" defer></script>
+    <script src="./supabase-client.js?v=9"></script>
+    <script src="./app.js?v=12" defer></script>
   </body>
 </html>

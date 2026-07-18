@@ -1,10 +1,10 @@
-const CACHE_NAME = "jappo-cotiz-v11";
+const CACHE_NAME = "jappo-cotiz-v12";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=10",
-  "./app.js?v=11",
-  "./supabase-client.js?v=8",
+  "./styles.css?v=11",
+  "./app.js?v=12",
+  "./supabase-client.js?v=9",
   "./manifest.webmanifest",
   "./assets/icon.svg"
 ];
@@ -34,4 +34,35 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(event.request)
         .then((cached) => cached || (event.request.mode === "navigate" ? caches.match("./index.html") : undefined)))
   );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data?.json() || {};
+  } catch {
+    payload = { body: event.data?.text() || "Une nouvelle activité concerne vos cotisations." };
+  }
+  const title = payload.title || "Jàppoo Cotiz";
+  event.waitUntil(self.registration.showNotification(title, {
+    body: payload.body || "Une nouvelle activité a été enregistrée.",
+    icon: "./assets/icon.svg",
+    badge: "./assets/icon.svg",
+    tag: payload.tag || `jappo-${Date.now()}`,
+    data: { url: payload.url || "./?notification=activity" }
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || "./", self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
+    const existing = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      await existing.focus();
+      if ("navigate" in existing) await existing.navigate(targetUrl);
+      return;
+    }
+    await self.clients.openWindow(targetUrl);
+  }));
 });
