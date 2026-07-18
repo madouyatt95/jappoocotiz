@@ -1,0 +1,15 @@
+{
+  "name": "jappo-cotiz",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PWA mobile-first de gestion de cotisations familiales avec assistance vocale.",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run check"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

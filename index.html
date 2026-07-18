@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#123d35" />
+    <meta name="color-scheme" content="light" />
+    <meta name="description" content="Jàppoo Cotiz, le suivi simple et accessible des cotisations familiales." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Jàppoo" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./styles.css?v=3" />
+    <title>Jàppoo Cotiz</title>
+  </head>
+  <body>
+    <noscript>Jàppoo Cotiz nécessite JavaScript pour fonctionner.</noscript>
+    <div class="app-shell" id="app">
+      <header class="topbar">
+        <button class="family-switch" type="button" data-action="family-switch" aria-label="Informations sur l’espace familial">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><path d="M16 3 4 9v7c0 6.8 4.7 11 12 13 7.3-2 12-6.2 12-13V9L16 3Z" fill="currentColor"/><path d="M10 16.5c2.8-3.4 9.2-3.4 12 0M12 12.2h.01M20 12.2h.01" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </span>
+          <span class="family-copy"><small>Mon espace</small><strong>Ma famille</strong></span>
+        </button>
+        <div class="top-actions">
+          <button class="admin-pill" type="button" data-nav="gestion" aria-label="Ouvrir l’espace réservé aux personnes habilitées">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/><path d="M12 14v3"/></svg>
+            <span>Gestion</span>
+          </button>
+          <button class="icon-btn notification-btn" type="button" data-action="notifications" aria-label="Voir les notifications">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM14 21h-4"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main id="main-content" tabindex="-1">
+        <section class="page active" id="page-home" data-page="home" aria-labelledby="home-title">
+          <div class="welcome-row">
+            <div>
+              <p class="eyebrow" id="today-label">Aujourd’hui</p>
+              <h1 id="home-title">Bonjour <span aria-hidden="true">👋🏾</span></h1>
+              <p class="welcome-status"><span class="status-dot good"></span><strong id="welcome-status-text">Aucune échéance en retard</strong></p>
+            </div>
+            <button class="listen-chip" type="button" data-speak="summary" aria-label="Écouter où j’en suis dans mes cotisations">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 9.5a4 4 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/></svg>
+              Écouter
+            </button>
+          </div>
+
+          <article class="balance-card" aria-label="Résumé de mes cotisations">
+            <div class="balance-glow"></div>
+            <div class="balance-top">
+              <div>
+                <p>Reste à payer</p>
+                <div class="balance-amount"><strong id="balance-total">0</strong><span>€</span></div>
+              </div>
+              <div class="month-progress" aria-label="Aucun paiement enregistré">
+                <svg viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="23"/><circle class="progress-value" cx="28" cy="28" r="23"/></svg>
+                <span id="progress-label">0/2</span>
+              </div>
+            </div>
+            <div class="balance-meta">
+              <span id="next-due-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg>Aucune échéance programmée</span>
+            </div>
+            <div class="balance-actions">
+              <button class="primary-btn light" type="button" data-speak="summary">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 9.5a4 4 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/></svg>
+                Écouter ma situation
+              </button>
+            </div>
+          </article>
+
+          <section class="section-block" aria-labelledby="situation-title">
+            <div class="section-heading">
+              <div><p class="eyebrow">Mes deux caisses</p><h2 id="situation-title">Ma situation</h2></div>
+              <button class="text-btn" type="button" data-nav="cotisations">Détails <span aria-hidden="true">→</span></button>
+            </div>
+            <div class="contribution-list" id="home-contribution-list"></div>
+          </section>
+
+          <section class="fund-snapshot" aria-labelledby="fund-title">
+            <div class="fund-heading">
+              <span class="feature-icon amber"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v10H4zM7 10V7a5 5 0 0 1 10 0v3M8 14h8M8 17h5"/></svg></span>
+              <div><p class="eyebrow">Vue globale</p><h2 id="fund-title">Les caisses</h2></div>
+              <button class="icon-btn subtle" type="button" data-nav="caisse" aria-label="Voir les caisses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            </div>
+            <div class="fund-numbers">
+              <div><small>Collecté en espèces</small><strong id="home-collected">0 €</strong></div>
+              <div><small>Disponible</small><strong id="home-available">0 €</strong></div>
+            </div>
+            <p class="goal-caption">Caisse famille et Caisse décès uniquement.</p>
+          </section>
+        </section>
+
+        <section class="page" id="page-cotisations" data-page="cotisations" aria-labelledby="cotisations-title">
+          <div class="page-heading">
+            <div><p class="eyebrow">Consultation uniquement</p><h1 id="cotisations-title">Mes cotisations</h1></div>
+            <button class="listen-chip compact" type="button" data-speak="contributions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 9.5a4 4 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/></svg>Écouter</button>
+          </div>
+          <div class="notice-card"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Statuts protégés</strong><p>Seules les personnes habilitées peuvent enregistrer un paiement en espèces.</p></div></div>
+          <div class="summary-strip">
+            <div><span class="mini-icon green">✓</span><small>Versé</small><strong id="paid-summary">0 €</strong></div>
+            <div><span class="mini-icon red">!</span><small>En retard</small><strong id="late-summary">0 €</strong></div>
+            <div><span class="mini-icon orange">↗</span><small>À payer</small><strong id="upcoming-summary">0 €</strong></div>
+          </div>
+          <div class="filter-scroll" role="group" aria-label="Filtrer les cotisations">
+            <button class="filter-chip active" type="button" data-filter="all">Toutes</button>
+            <button class="filter-chip" type="button" data-filter="due">À payer</button>
+            <button class="filter-chip" type="button" data-filter="paid">Versements reçus</button>
+          </div>
+          <div class="detailed-contributions" id="detailed-contribution-list"></div>
+        </section>
+
+        <section class="page" id="page-caisse" data-page="caisse" aria-labelledby="caisse-title">
+          <div class="page-heading">
+            <div><p class="eyebrow">Caisse famille et décès</p><h1 id="caisse-title">Les caisses</h1></div>
+            <button class="icon-btn soft" type="button" data-speak="fund" aria-label="Écouter le résumé des caisses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 9.5a4 4 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/></svg></button>
+          </div>
+          <article class="cash-hero">
+            <div class="cash-hero-head"><span>Solde disponible</span><span class="privacy-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>Suivi partagé</span></div>
+            <strong id="cash-balance">0,00 €</strong>
+            <p id="cash-updated">Aucune opération enregistrée</p>
+            <div class="cash-grid"><div><small>Entrées en espèces</small><b id="cash-in">+ 0 €</b></div><div><small>Dépenses</small><b>− 0 €</b></div></div>
+          </article>
+          <section class="section-block">
+            <div class="section-heading"><div><p class="eyebrow">Dernières opérations</p><h2>Mouvements de caisse</h2></div></div>
+            <div class="transaction-list" id="transaction-list"></div>
+          </section>
+        </section>
+
+        <section class="page" id="page-activite" data-page="activite" aria-labelledby="activite-title">
+          <div class="page-heading"><div><p class="eyebrow">Tout est traçable</p><h1 id="activite-title">Activité</h1></div></div>
+          <div class="notice-card"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><strong>Historique sécurisé</strong><p>Chaque paiement conserve le nom de la personne habilitée qui l’a enregistré.</p></div></div>
+          <div class="activity-timeline" id="activity-list"></div>
+        </section>
+
+        <section class="page" id="page-profil" data-page="profil" aria-labelledby="profil-title">
+          <div class="page-heading"><div><p class="eyebrow">Mon compte</p><h1 id="profil-title">Profil</h1></div></div>
+          <article class="profile-card">
+            <div class="profile-avatar">UT</div>
+            <div><h2>Utilisateur connecté</h2><p>Informations personnelles à compléter</p><span>Membre</span></div>
+          </article>
+          <section class="voice-settings" aria-labelledby="voice-settings-title">
+            <div class="voice-title"><span class="feature-icon indigo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg></span><div><p class="eyebrow">Accessibilité</p><h2 id="voice-settings-title">Situation vocale</h2></div></div>
+            <p>Le micro sert uniquement à écouter où vous en êtes dans vos cotisations. Il ne peut créer ni modifier un paiement.</p>
+            <label class="setting-row"><span><strong>Parole lente</strong><small>Prononciation plus posée</small></span><input type="checkbox" id="slow-speech-toggle" checked /><span class="switch" aria-hidden="true"></span></label>
+            <button class="secondary-btn full" type="button" data-action="open-voice"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>Écouter ma situation</button>
+          </section>
+          <section class="settings-list" aria-label="Réglages du profil">
+            <button type="button" data-action="notifications"><span class="feature-icon soft-amber"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM14 21h-4"/></svg></span><span><strong>Notifications</strong><small>Rappels et confirmations reçues</small></span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            <button type="button" data-action="documents"><span class="feature-icon soft-blue"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l4 4v16H6V2Z"/><path d="M14 2v5h5M9 12h6M9 16h6"/></svg></span><span><strong>Mes reçus</strong><small>Reçus des paiements enregistrés</small></span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+          </section>
+          <button class="install-card hidden" id="install-card" type="button" data-action="install-app"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span><span><strong>Installer Jàppoo</strong><small>Accès rapide et fonctionnement hors connexion</small></span></button>
+        </section>
+
+        <section class="page admin-page" id="page-gestion" data-page="gestion" aria-labelledby="gestion-title">
+          <div class="admin-heading">
+            <button class="icon-btn inverse" type="button" data-nav="home" aria-label="Retour à l’accueil"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+            <div><p>Espace sécurisé</p><h1 id="gestion-title">Gestion</h1></div>
+            <button class="avatar-mini" type="button" data-action="admin-profile" aria-label="Profil responsable">RP</button>
+          </div>
+          <div class="admin-content">
+            <div class="admin-role"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><small>Autorisation requise</small><strong>Personne habilitée</strong></div><em class="cash-only-badge">Espèces uniquement</em></div>
+            <div class="admin-kpis">
+              <article><span class="kpi-icon green">↗</span><small>Espèces encaissées</small><strong id="admin-cash-total">0 €</strong><em>Solde actuel</em></article>
+              <article><span class="kpi-icon orange">#</span><small>Paiements enregistrés</small><strong id="admin-payment-count">0</strong><em>Historique vide</em></article>
+              <article><span class="kpi-icon blue">2</span><small>Caisses actives</small><strong>2</strong><em>Famille et décès</em></article>
+            </div>
+            <section class="section-block admin-actions" aria-labelledby="quick-actions-title">
+              <div class="section-heading"><div><p class="eyebrow">Action autorisée</p><h2 id="quick-actions-title">Paiement en espèces</h2></div></div>
+              <button class="primary-btn full" type="button" data-action="record-cash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Enregistrer un paiement en espèces</button>
+            </section>
+            <section class="pending-section" aria-labelledby="cash-history-title">
+              <div class="section-heading"><div><p class="eyebrow">Traçabilité</p><h2 id="cash-history-title">Derniers paiements en espèces</h2></div></div>
+              <div id="admin-cash-payments"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <button class="voice-fab" id="voice-fab" type="button" data-action="open-voice" aria-label="Écouter ma situation de cotisations">
+        <span class="voice-rings" aria-hidden="true"></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
+        <span>Ma situation</span>
+      </button>
+
+      <nav class="bottom-nav" aria-label="Navigation principale">
+        <button class="active" type="button" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8v10h-6v-6H9v6H3V11Z"/></svg><span>Accueil</span></button>
+        <button type="button" data-nav="cotisations"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg><span>Cotisations</span></button>
+        <button type="button" data-nav="caisse"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v13H3zM6 7V4h12v3M16 13h5"/><circle cx="16" cy="13" r="1"/></svg><span>Caisses</span></button>
+        <button type="button" data-nav="activite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></svg><span>Activité</span></button>
+        <button type="button" data-nav="profil"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Profil</span></button>
+      </nav>
+    </div>
+
+    <div class="modal-backdrop hidden" id="modal-backdrop"></div>
+
+    <section class="bottom-sheet hidden" id="payment-sheet" role="dialog" aria-modal="true" aria-labelledby="payment-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Réservé aux personnes habilitées</p><h2 id="payment-title">Paiement en espèces</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <form id="payment-form">
+        <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Accès contrôlé</strong><p>Le membre ne peut pas enregistrer lui-même ce paiement.</p></div></div>
+        <label class="form-field"><span>Membre bénéficiaire</span><select id="payment-member" required><option value="current">Membre connecté</option></select></label>
+        <label class="form-field"><span>Caisse concernée</span><select id="payment-contribution" required></select></label>
+        <div class="form-grid"><label class="form-field"><span>Montant reçu</span><div class="money-input"><input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /><b>€</b></div></label><label class="form-field"><span>Date</span><input id="payment-date" type="date" required /></label></div>
+        <label class="form-field"><span>Période concernée</span><input id="payment-period" type="month" required /></label>
+        <label class="form-field"><span>Moyen de paiement</span><input id="payment-method" type="text" value="Espèces" readonly /></label>
+        <label class="form-field"><span>Note facultative</span><input id="payment-note" type="text" maxlength="160" placeholder="Ex. reçu remis au membre" /></label>
+        <button class="primary-btn full" type="submit">Enregistrer le paiement en espèces</button>
+      </form>
+    </section>
+
+    <section class="bottom-sheet voice-sheet hidden" id="voice-sheet" role="dialog" aria-modal="true" aria-labelledby="voice-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Consultation uniquement</p><h2 id="voice-title">Où en suis-je ?</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div class="voice-stage">
+        <button class="big-mic" id="big-mic" type="button" data-action="start-listening" aria-label="Demander ma situation de cotisations">
+          <span class="mic-pulse" aria-hidden="true"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
+        </button>
+        <strong id="voice-status">Appuyez et demandez votre situation</strong>
+        <p id="voice-transcript">Le micro ne peut ni déclarer ni modifier un paiement.</p>
+      </div>
+      <div class="voice-shortcuts" aria-label="Informations vocales disponibles">
+        <button type="button" data-voice-command="summary"><span>💶</span><strong>Mon résumé</strong><small>Reste et retards</small></button>
+        <button type="button" data-voice-command="details"><span>📋</span><strong>Mes deux caisses</strong><small>Situation détaillée</small></button>
+      </div>
+      <p class="voice-privacy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg>Consultation vocale uniquement. Aucune opération financière n’est possible.</p>
+    </section>
+
+    <section class="center-modal hidden" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <span class="confirmation-icon">✓</span>
+      <h2 id="confirm-title">Paiement enregistré</h2>
+      <p id="confirm-message">Le paiement en espèces est ajouté à l’historique.</p>
+      <button class="primary-btn full" type="button" data-action="close-confirm">Compris</button>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js?v=3" defer></script>
+  </body>
+</html>

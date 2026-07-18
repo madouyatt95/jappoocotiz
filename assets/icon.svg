@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Icône Jàppoo Cotiz">
+  <rect width="512" height="512" rx="112" fill="#123d35"/>
+  <circle cx="398" cy="112" r="104" fill="#cdea72" opacity=".13"/>
+  <path d="M256 76 104 151v90c0 96 57 159 152 195 95-36 152-99 152-195v-90L256 76Z" fill="#cdea72"/>
+  <circle cx="199" cy="220" r="25" fill="#123d35"/>
+  <circle cx="313" cy="220" r="25" fill="#123d35"/>
+  <path d="M168 308c47-58 129-58 176 0" fill="none" stroke="#123d35" stroke-width="28" stroke-linecap="round"/>
+  <path d="M256 171v43" stroke="#123d35" stroke-width="24" stroke-linecap="round" opacity=".28"/>
+</svg>

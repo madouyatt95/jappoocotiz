@@ -1,0 +1,32 @@
+{
+  "id": "./",
+  "name": "Jàppoo Cotiz — Caisse familiale",
+  "short_name": "Jàppoo",
+  "description": "Suivi familial de la caisse famille et de la caisse décès, avec consultation vocale.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#f4f6f3",
+  "theme_color": "#123d35",
+  "categories": ["finance", "productivity", "social"],
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Écouter ma situation",
+      "short_name": "Ma situation",
+      "url": "./?action=voice",
+      "icons": [{ "src": "./assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}
