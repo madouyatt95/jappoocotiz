@@ -100,6 +100,24 @@
     });
   }
 
+  async function signInWithPassword(email, password) {
+    const session = await authRequest("token?grant_type=password", {
+      method: "POST",
+      body: JSON.stringify({ email, password })
+    });
+    return storeSession(session);
+  }
+
+  async function updatePassword(password) {
+    const session = await initializeSession();
+    if (!session) throw new Error("Reconnectez-vous avant de définir le mot de passe.");
+    return authRequest("user", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ password })
+    });
+  }
+
   async function signOut() {
     const session = readSession();
     if (session?.access_token) {
@@ -159,22 +177,22 @@
     if (!user) return null;
 
     const memberships = await query("family_members", {
-      select: "id,family_id,user_id,full_name,role,active,approval_status,access_level,created_at,reviewed_at",
+      select: "id,family_id,user_id,full_name,role,active,approval_status,access_level,write_fund_codes,joined_on,created_at,reviewed_at",
       user_id: `eq.${user.id}`,
       limit: "1"
     });
     const membership = memberships[0] || null;
-    if (!membership) return { user, membership: null, family: null, funds: [], periods: [], payments: [], activityPayments: [], members: [] };
+    if (!membership) return { user, membership: null, family: null, funds: [], periods: [], payments: [], activityPayments: [], members: [], schedules: [] };
 
     const approved = membership.active && membership.approval_status === "approved";
     if (!approved) {
-      return { user, membership, family: null, funds: [], periods: [], payments: [], activityPayments: [], members: [membership] };
+      return { user, membership, family: null, funds: [], periods: [], payments: [], activityPayments: [], members: [membership], schedules: [] };
     }
 
     const familyId = membership.family_id;
     const authorized = membership.access_level === "write" && ["admin", "treasurer", "cash_collector"].includes(membership.role);
     const administrator = authorized && membership.role === "admin";
-    const [families, funds, periods, payments, activityPayments, members] = await Promise.all([
+    const [families, funds, periods, payments, activityPayments, members, schedules] = await Promise.all([
       query("family_spaces", { select: "id,name,currency", id: `eq.${familyId}`, limit: "1" }),
       query("funds", { select: "id,code,name,description,monthly_amount,frequency,start_date,due_day,display_order,active", family_id: `eq.${familyId}`, active: "eq.true", order: "display_order.asc" }),
       query("contribution_periods", {
@@ -191,12 +209,18 @@
       callRpc("list_payment_activity", { p_family_id: familyId }),
       authorized
         ? query("family_members", {
-          select: "id,full_name,user_id,role,active,approval_status,access_level,created_at,reviewed_at",
+          select: "id,full_name,user_id,role,active,approval_status,access_level,write_fund_codes,joined_on,created_at,reviewed_at",
           family_id: `eq.${familyId}`,
           ...(administrator ? {} : { active: "eq.true", approval_status: "eq.approved" }),
           order: "created_at.desc"
         })
-        : Promise.resolve([membership])
+        : Promise.resolve([membership]),
+      query("member_fund_schedules", {
+        select: "id,family_id,member_id,fund_id,start_month,end_month,active,updated_at",
+        family_id: `eq.${familyId}`,
+        active: "eq.true",
+        order: "updated_at.desc"
+      })
     ]);
 
     return {
@@ -207,7 +231,8 @@
       periods,
       payments,
       activityPayments,
-      members
+      members,
+      schedules
     };
   }
 
@@ -230,15 +255,22 @@
     return callRpc("review_member_access", review);
   }
 
+  async function setMemberFundSchedule(schedule) {
+    return callRpc("set_member_fund_schedule", schedule);
+  }
+
   global.JappoBackend = Object.freeze({
     configured,
     initializeSession,
     readSession,
     sendMagicLink,
+    signInWithPassword,
+    updatePassword,
     signOut,
     loadWorkspace,
     recordCashPayment,
     configureFund,
-    reviewMemberAccess
+    reviewMemberAccess,
+    setMemberFundSchedule
   });
 })(window);

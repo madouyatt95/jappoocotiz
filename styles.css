@@ -283,7 +283,7 @@ main { min-height: calc(100dvh - 150px); }
 .access-member-card.pending .access-member-head em { color: #9a611a; background: #faead1; }
 .access-member-card.rejected .access-member-head em { color: var(--red); background: #f9e5e2; }
 .access-member-controls { padding: 0 12px 12px; }
-.access-choice { display: grid; grid-template-columns: 1fr 1.35fr; gap: 6px; }
+.access-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .access-choice button { min-height: 39px; padding: 0 7px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: #f8faf8; font-size: 8px; font-weight: 850; cursor: pointer; }
 .access-choice button.active { border-color: var(--brand); color: white; background: var(--brand); }
 .access-choice button:disabled, .reject-access:disabled { opacity: .55; cursor: wait; }
@@ -314,6 +314,15 @@ main { min-height: calc(100dvh - 150px); }
 .form-field input[readonly] { color: #5c6d68; background: #edf2ef; cursor: not-allowed; }
 .form-status { min-height: 34px; margin: 2px 0 10px; color: var(--brand-2); font-size: 10px; line-height: 1.5; }
 .auth-help { margin: 10px 8px 0; color: var(--muted); font-size: 9px; line-height: 1.45; text-align: center; }
+.link-login-button { width: 100%; min-height: 44px; margin-top: 8px; border: 1px solid #b9ccc5; border-radius: 13px; color: var(--brand); background: white; font-size: 10px; font-weight: 850; cursor: pointer; }
+.link-login-button:disabled { opacity: .55; cursor: wait; }
+.admin-password-card { margin: 14px 0; padding: 16px; border: 1px solid #cfe0d8; border-radius: 19px; background: #f4f9f6; box-shadow: 0 8px 22px rgba(18,61,53,.06); }
+.admin-password-card > p { margin: 8px 0 14px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.schedule-form { padding-top: 4px; }
+.schedule-preview { display: flex; flex-direction: column; gap: 4px; margin: 0 0 13px; padding: 12px; border: 1px solid #d6e4de; border-radius: 14px; background: #f4f8f6; }
+.schedule-preview span { color: var(--muted); font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.schedule-preview strong { font-size: 12px; }
+.schedule-preview small { color: var(--muted); font-size: 9px; line-height: 1.4; }
 .cash-payment-card .pending-proof { margin-bottom: 13px; }
 .voice-hint { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 10px; border-radius: 12px; color: #5f5c9a; background: #f0eff9; font-size: 9px; }.voice-hint svg { flex: 0 0 auto; width: 17px; height: 17px; }
 .inline-setting { margin-bottom: 13px; border-color: var(--line); color: var(--ink); }.inline-setting .switch { background: #d9e0dd; }.inline-setting input:checked + .switch { background: var(--brand); }.inline-setting input:checked + .switch::after { background: white; }

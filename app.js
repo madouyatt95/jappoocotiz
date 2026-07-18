@@ -76,7 +76,8 @@ function formatMoney(value, decimals = 0) {
 }
 
 function totalCollected() {
-  return state.payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const payments = canRecordCash() ? state.payments.filter((payment) => canWriteFund(payment.contributionId)) : state.payments;
+  return payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 }
 
 function personalCollected() {
@@ -132,6 +133,16 @@ function canRecordCash() {
   );
 }
 
+function writableFundCodes(member = workspace?.membership) {
+  if (!member) return [];
+  if (member.role === "admin" && member.approval_status === "approved") return ALLOWED_CONTRIBUTIONS.slice();
+  return Array.from(new Set(member.write_fund_codes || [])).filter((code) => ALLOWED_CONTRIBUTIONS.includes(code));
+}
+
+function canWriteFund(code) {
+  return canRecordCash() && writableFundCodes().includes(code);
+}
+
 function isAdministrator() {
   return Boolean(canRecordCash() && workspace.membership.role === "admin");
 }
@@ -148,8 +159,13 @@ function accessLabel(member) {
   if (!member) return "Accès protégé";
   if (member.approval_status === "pending") return "En attente";
   if (member.approval_status === "rejected") return "Accès refusé";
-  if (member.role === "admin") return "Administrateur";
-  return member.access_level === "write" ? "Lecture + saisie" : "Lecture seule";
+  if (member.role === "admin") return "Administrateur • deux caisses";
+  if (member.access_level !== "write") return "Lecture seule";
+  const codes = writableFundCodes(member);
+  if (codes.length === 2) return "Saisie • Famille + Décès";
+  if (codes[0] === "family") return "Saisie • Caisse famille";
+  if (codes[0] === "death") return "Saisie • Caisse décès";
+  return "Lecture seule";
 }
 
 function initials(name) {
@@ -350,11 +366,12 @@ function renderActivities() {
 
 function renderAdminPayments() {
   const container = document.querySelector("#admin-cash-payments");
-  if (!state.payments.length) {
+  const writablePayments = state.payments.filter((payment) => canWriteFund(payment.contributionId));
+  if (!writablePayments.length) {
     container.innerHTML = '<div class="notice-card"><span class="feature-icon green">✓</span><div><strong>Aucun paiement enregistré</strong><p>La liste est vide et ne contient aucune donnée de démonstration.</p></div></div>';
     return;
   }
-  container.innerHTML = state.payments.slice(0, 6).map((payment) => `
+  container.innerHTML = writablePayments.slice(0, 6).map((payment) => `
     <article class="pending-card cash-payment-card">
       <div class="pending-main"><span class="member-avatar">MC</span><div><strong>${escapeHTML(payment.member)}</strong><small>${escapeHTML(payment.contribution)} • Espèces • ${escapeHTML(payment.periodLabel)}</small></div><div class="pending-amount"><b>${formatMoney(payment.amount)} €</b><time>${escapeHTML(payment.dateLabel)}</time></div></div>
       <div class="pending-proof">${iconSVG("receipt")}<span>Enregistré par ${escapeHTML(payment.recordedBy)}</span></div>
@@ -368,7 +385,8 @@ function renderMemberStatuses() {
     container.innerHTML = '<div class="empty-state compact-empty"><span>👥</span><strong>Aucun membre</strong><p>Les membres rattachés apparaîtront ici.</p></div>';
     return;
   }
-  const fund = workspace.funds.find((item) => item.code === adminFundView);
+  if (!canWriteFund(adminFundView)) adminFundView = writableFundCodes()[0] || "family";
+  const fund = workspace.funds.find((item) => item.code === adminFundView && canWriteFund(item.code));
   if (!fund) return;
   container.innerHTML = members.map((member) => {
     const situation = fundSituation(member.id, fund.id);
@@ -408,11 +426,14 @@ function renderMemberAccess() {
     const rejected = member.approval_status === "rejected";
     const protectedAdmin = member.role === "admin" && member.approval_status === "approved";
     const status = pending ? "En attente de validation" : rejected ? "Accès refusé" : accessLabel(member);
+    const memberCodes = writableFundCodes(member).slice().sort().join(",");
     const controls = protectedAdmin
-      ? '<span class="protected-access">Compte protégé</span>'
+      ? '<span class="protected-access">Écriture permanente sur les deux caisses</span>'
       : `<div class="access-choice" role="group" aria-label="Droits de ${escapeHTML(member.full_name)}">
-          <button class="${!pending && !rejected && member.access_level === "read" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="read">Lecture seule</button>
-          <button class="${!pending && !rejected && member.access_level === "write" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write">Lecture + saisie</button>
+          <button class="${!pending && !rejected && member.access_level === "read" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="read" data-write-funds="">Lecture seule</button>
+          <button class="${!pending && !rejected && member.access_level === "write" && memberCodes === "family" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="family">Famille</button>
+          <button class="${!pending && !rejected && member.access_level === "write" && memberCodes === "death" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="death">Décès</button>
+          <button class="${!pending && !rejected && member.access_level === "write" && memberCodes === "death,family" ? "active" : ""}" type="button" data-review-member="${member.id}" data-access-level="write" data-write-funds="family,death">Les deux</button>
         </div>
         ${pending ? `<button class="reject-access" type="button" data-reject-member="${member.id}">Refuser</button>` : ""}`;
     return `<article class="access-member-card ${pending ? "pending" : rejected ? "rejected" : "approved"}">
@@ -440,19 +461,77 @@ function renderPaymentOptions() {
   const previousFund = document.querySelector("#payment-contribution").value || currentFundView;
   const previousMember = document.querySelector("#payment-member").value;
   document.querySelector("#payment-contribution").innerHTML = state.contributions
-    .filter((item) => item.backendId)
+    .filter((item) => item.backendId && canWriteFund(item.id))
     .map((item) => `<option value="${item.id}">${escapeHTML(item.name)}</option>`).join("");
   const members = canRecordCash() ? approvedMembers() : [];
   document.querySelector("#payment-member").innerHTML = members.length
     ? members.map((member) => `<option value="${escapeHTML(member.id)}">${escapeHTML(member.full_name)}</option>`).join("")
     : '<option value="">Aucun membre disponible</option>';
   if (members.some((member) => member.id === previousMember)) document.querySelector("#payment-member").value = previousMember;
-  document.querySelector("#payment-contribution").value = state.contributions.some((item) => item.id === previousFund && item.backendId) ? previousFund : state.contributions.find((item) => item.backendId)?.id || "";
-  document.querySelector("#quick-fund-grid").innerHTML = state.contributions.filter((item) => item.backendId).map((item) => `
+  const writableContributions = state.contributions.filter((item) => item.backendId && canWriteFund(item.id));
+  document.querySelector("#payment-contribution").value = writableContributions.some((item) => item.id === previousFund) ? previousFund : writableContributions[0]?.id || "";
+  document.querySelector("#quick-fund-grid").innerHTML = writableContributions.map((item) => `
     <button class="${document.querySelector("#payment-contribution").value === item.id ? "active" : ""}" type="button" data-quick-fund="${item.id}">
       <span class="contribution-icon ${item.id === "family" ? "green" : "indigo"}">${iconSVG(item.icon)}</span><strong>${escapeHTML(item.name)}</strong><small>${formatMoney(item.monthlyAmount)} € / mois</small>
     </button>`).join("");
   updateQuickPaymentSummary();
+}
+
+function currentMonthValue() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function scheduleFor(memberId, fundId) {
+  return (workspace?.schedules || []).find((schedule) => schedule.member_id === memberId && schedule.fund_id === fundId);
+}
+
+function updateSchedulePreview() {
+  const memberId = document.querySelector("#schedule-member")?.value;
+  const fundId = document.querySelector("#schedule-fund")?.value;
+  const start = document.querySelector("#schedule-start")?.value;
+  const end = document.querySelector("#schedule-end")?.value;
+  const member = approvedMembers().find((item) => item.id === memberId);
+  const fund = workspace?.funds?.find((item) => item.id === fundId);
+  const preview = document.querySelector("#schedule-preview");
+  if (!preview) return;
+  if (!member || !fund || !start || !end || start > end) {
+    preview.innerHTML = "<span>Période</span><strong>Sélectionnez une période valide</strong><small>Du mois de début au mois de fin inclus.</small>";
+    return;
+  }
+  const [startYear, startMonth] = start.split("-").map(Number);
+  const [endYear, endMonth] = end.split("-").map(Number);
+  const count = (endYear - startYear) * 12 + endMonth - startMonth + 1;
+  preview.innerHTML = `<span>${escapeHTML(member.full_name)} • ${escapeHTML(fund.name)}</span><strong>${count} mensualité${count > 1 ? "s" : ""} • ${formatMoney(count * Number(fund.monthly_amount))} € dus</strong><small>${formatPeriod(start)} à ${formatPeriod(end)} inclus • paiements existants conservés</small>`;
+}
+
+function hydrateScheduleForm() {
+  const memberId = document.querySelector("#schedule-member")?.value;
+  const fundId = document.querySelector("#schedule-fund")?.value;
+  const member = approvedMembers().find((item) => item.id === memberId);
+  const fund = workspace?.funds?.find((item) => item.id === fundId);
+  if (!member || !fund) return updateSchedulePreview();
+  const existing = scheduleFor(memberId, fundId);
+  const defaultStart = ["2021-01", String(fund.start_date || "2021-01").slice(0, 7), String(member.joined_on || "2021-01").slice(0, 7)].sort().at(-1);
+  document.querySelector("#schedule-start").value = existing ? String(existing.start_month).slice(0, 7) : defaultStart;
+  document.querySelector("#schedule-end").value = existing ? String(existing.end_month).slice(0, 7) : currentMonthValue();
+  updateSchedulePreview();
+}
+
+function renderScheduleOptions() {
+  const section = document.querySelector("#member-schedule-section");
+  section.classList.toggle("hidden", !canRecordCash());
+  if (!canRecordCash()) return;
+  const memberSelect = document.querySelector("#schedule-member");
+  const fundSelect = document.querySelector("#schedule-fund");
+  const previousMember = memberSelect.value;
+  const previousFund = fundSelect.value;
+  const members = approvedMembers();
+  const funds = (workspace?.funds || []).filter((fund) => canWriteFund(fund.code));
+  memberSelect.innerHTML = members.map((member) => `<option value="${escapeHTML(member.id)}">${escapeHTML(member.full_name)}</option>`).join("");
+  fundSelect.innerHTML = funds.map((fund) => `<option value="${escapeHTML(fund.id)}">${escapeHTML(fund.name)}</option>`).join("");
+  if (members.some((member) => member.id === previousMember)) memberSelect.value = previousMember;
+  if (funds.some((fund) => fund.id === previousFund)) fundSelect.value = previousFund;
+  hydrateScheduleForm();
 }
 
 function updateQuickPaymentSummary() {
@@ -486,7 +565,11 @@ function renderIdentity() {
   document.querySelector("#profile-role").textContent = accessLabel(member);
   document.querySelector("#auth-button").textContent = connected ? "Se déconnecter" : "Se connecter";
   document.querySelector("#quick-payment-fab").classList.toggle("hidden", !canRecordCash());
+  document.querySelector("#admin-password-section").classList.toggle("hidden", !isAdministrator());
   document.querySelector("#fund-config-shortcut").classList.toggle("hidden", !isAdministrator());
+  const allowedCodes = writableFundCodes();
+  document.querySelectorAll("[data-admin-fund]").forEach((button) => button.classList.toggle("hidden", !allowedCodes.includes(button.dataset.adminFund)));
+  if (!allowedCodes.includes(adminFundView)) adminFundView = allowedCodes[0] || "family";
   document.querySelector("#admin-pill-label").textContent = canRecordCash() ? "Gestion" : member?.approval_status === "pending" ? "En attente" : connected ? "Accès" : "Connexion";
   document.querySelector("#admin-role-label").textContent = member ? `${accessLabel(member)} • ${member.full_name}` : "Personne habilitée";
   document.querySelector("#home-collected-label").textContent = canRecordCash() ? "Collecté en espèces" : "Mes versements";
@@ -523,6 +606,7 @@ function renderIdentity() {
 
 function renderSummaries() {
   const cashCollected = totalCollected();
+  const writablePaymentCount = state.payments.filter((payment) => canWriteFund(payment.contributionId)).length;
   const outstanding = outstandingTotal();
   const paidFunds = state.contributions.filter((item) => item.paid > 0).length;
   const late = state.contributions.filter((item) => contributionStatus(item) === "late").reduce((sum, item) => sum + Math.max(0, item.amount - item.paid), 0);
@@ -541,8 +625,8 @@ function renderSummaries() {
   document.querySelector("#home-collected").textContent = `${formatMoney(cashCollected)} €`;
   document.querySelector("#home-available").textContent = `${formatMoney(cashCollected)} €`;
   document.querySelector("#admin-cash-total").textContent = `${formatMoney(cashCollected)} €`;
-  document.querySelector("#admin-payment-count").textContent = state.payments.length;
-  document.querySelector("#admin-payment-count").nextElementSibling.textContent = state.payments.length ? `${state.payments.length} opération${state.payments.length > 1 ? "s" : ""}` : "Historique vide";
+  document.querySelector("#admin-payment-count").textContent = writablePaymentCount;
+  document.querySelector("#admin-payment-count").nextElementSibling.textContent = writablePaymentCount ? `${writablePaymentCount} opération${writablePaymentCount > 1 ? "s" : ""}` : "Historique vide";
 }
 
 function renderAll() {
@@ -556,6 +640,7 @@ function renderAll() {
   renderMemberStatuses();
   renderFundSettings();
   renderPaymentOptions();
+  renderScheduleOptions();
   renderSummaries();
   renderIdentity();
   document.querySelector("#slow-speech-toggle").checked = state.settings.slowSpeech;
@@ -687,7 +772,9 @@ function openQuickPayment() {
   if (!canRecordCash()) return showToast("Autorisation Supabase insuffisante.");
   paymentMonthCount = 1;
   document.querySelectorAll("[data-month-count]").forEach((button) => button.classList.toggle("active", button.dataset.monthCount === "1"));
-  const preferredFund = state.contributions.find((item) => item.id === adminFundView && item.backendId) ? adminFundView : state.contributions.find((item) => item.backendId)?.id;
+  const preferredFund = state.contributions.find((item) => item.id === adminFundView && item.backendId && canWriteFund(item.id))
+    ? adminFundView
+    : state.contributions.find((item) => item.backendId && canWriteFund(item.id))?.id;
   if (preferredFund) document.querySelector("#payment-contribution").value = preferredFund;
   document.querySelectorAll("[data-quick-fund]").forEach((button) => button.classList.toggle("active", button.dataset.quickFund === preferredFund));
   setDefaultPaymentDates();
@@ -735,7 +822,7 @@ async function submitFundConfiguration(event) {
   }
 }
 
-async function reviewMemberAccess(memberId, decision, level, trigger) {
+async function reviewMemberAccess(memberId, decision, level, writeFunds, trigger) {
   if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
   const member = workspace.members.find((item) => item.id === memberId);
   if (!member) return showToast("Compte introuvable.");
@@ -745,17 +832,70 @@ async function reviewMemberAccess(memberId, decision, level, trigger) {
     await window.JappoBackend.reviewMemberAccess({
       p_member_id: memberId,
       p_decision: decision,
-      p_access_level: level
+      p_access_level: level,
+      p_write_fund_codes: writeFunds
     });
     await syncFromBackend({ quiet: true });
     if (decision === "reject") {
       showToast(`Accès refusé pour ${member.full_name}.`);
     } else {
-      showToast(`${member.full_name} : ${level === "write" ? "lecture et saisie autorisées" : "lecture seule autorisée"}.`);
+      const scope = writeFunds.length === 2 ? "les deux caisses" : writeFunds[0] === "family" ? "la caisse famille" : "la caisse décès";
+      showToast(`${member.full_name} : ${level === "write" ? `saisie autorisée sur ${scope}` : "lecture seule autorisée"}.`);
     }
   } catch (error) {
     showToast(error.message || "Les droits n’ont pas pu être modifiés.");
     card?.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+  }
+}
+
+async function submitMemberSchedule(event) {
+  event.preventDefault();
+  if (!canRecordCash()) return showToast("Autorisation de saisie requise.");
+  const memberId = document.querySelector("#schedule-member").value;
+  const fundId = document.querySelector("#schedule-fund").value;
+  const start = document.querySelector("#schedule-start").value;
+  const end = document.querySelector("#schedule-end").value;
+  const fund = workspace?.funds?.find((item) => item.id === fundId);
+  if (!memberId || !fund || !canWriteFund(fund.code) || !start || !end || start > end) return showToast("Vérifiez le membre, la caisse et les mois.");
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = "Calcul des mensualités…";
+  try {
+    await window.JappoBackend.setMemberFundSchedule({
+      p_member_id: memberId,
+      p_fund_id: fundId,
+      p_start_month: `${start}-01`,
+      p_end_month: `${end}-01`
+    });
+    await syncFromBackend({ quiet: true });
+    showToast("Période enregistrée. Les arriérés ont été recalculés.");
+  } catch (error) {
+    showToast(error.message || "Les mensualités n’ont pas pu être calculées.");
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Calculer les mensualités dues";
+  }
+}
+
+async function submitAdminPassword(event) {
+  event.preventDefault();
+  if (!isAdministrator()) return showToast("Autorisation administrateur requise.");
+  const password = document.querySelector("#admin-new-password").value;
+  const confirmation = document.querySelector("#admin-confirm-password").value;
+  if (password.length < 10) return showToast("Le mot de passe doit contenir au moins 10 caractères.");
+  if (password !== confirmation) return showToast("Les deux mots de passe ne correspondent pas.");
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = "Enregistrement…";
+  try {
+    await window.JappoBackend.updatePassword(password);
+    event.target.reset();
+    showToast("Mot de passe enregistré. Vous pourrez vous connecter directement.");
+  } catch (error) {
+    showToast(error.message || "Le mot de passe n’a pas pu être enregistré.");
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Enregistrer mon mot de passe";
   }
 }
 
@@ -768,7 +908,7 @@ async function recordCashPayment(event) {
   const amount = Number(document.querySelector("#payment-amount").value);
   const dateValue = document.querySelector("#payment-date").value;
   const note = document.querySelector("#payment-note").value.trim();
-  if (!contribution?.backendId || !memberId || !Number.isFinite(amount) || amount <= 0 || !dateValue) return showToast("Vérifiez les informations du paiement.");
+  if (!contribution?.backendId || !canWriteFund(contributionId) || !memberId || !Number.isFinite(amount) || amount <= 0 || !dateValue) return showToast("Vérifiez vos droits et les informations du paiement.");
 
   const submit = event.target.querySelector('button[type="submit"]');
   submit.disabled = true;
@@ -841,21 +981,49 @@ async function syncFromBackend({ quiet = false } = {}) {
 async function submitAuth(event) {
   event.preventDefault();
   const email = document.querySelector("#auth-email").value.trim().toLowerCase();
+  const password = document.querySelector("#auth-password").value;
   const status = document.querySelector("#auth-status");
   const submit = document.querySelector("#auth-submit");
-  if (!email) return;
+  if (!email || !password) {
+    status.textContent = "Saisissez votre e-mail et votre mot de passe, ou utilisez le lien de secours.";
+    return;
+  }
   submit.disabled = true;
-  submit.textContent = "Envoi du lien…";
+  submit.textContent = "Connexion…";
   status.textContent = "";
   try {
-    await window.JappoBackend.sendMagicLink(email);
-    status.textContent = "Lien envoyé. Ouvrez votre e-mail puis touchez le bouton de connexion.";
+    backendSession = await window.JappoBackend.signInWithPassword(email, password);
     event.target.reset();
+    await syncFromBackend({ quiet: true });
+    closeSheets();
+    showToast("Connexion réussie.");
   } catch (error) {
-    status.textContent = error.message || "Le lien de connexion n’a pas pu être envoyé.";
+    status.textContent = error.message || "La connexion a échoué.";
   } finally {
     submit.disabled = false;
     submit.textContent = "Se connecter";
+  }
+}
+
+async function sendLoginLink() {
+  const email = document.querySelector("#auth-email").value.trim().toLowerCase();
+  const status = document.querySelector("#auth-status");
+  const button = document.querySelector("#auth-link-submit");
+  if (!email) {
+    status.textContent = "Saisissez d’abord votre adresse e-mail.";
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Envoi…";
+  status.textContent = "";
+  try {
+    await window.JappoBackend.sendMagicLink(email);
+    status.textContent = "Lien de secours envoyé. Ouvrez votre e-mail pour vous connecter.";
+  } catch (error) {
+    status.textContent = error.message || "Le lien de secours n’a pas pu être envoyé.";
+  } finally {
+    button.disabled = false;
+    button.textContent = "Recevoir un lien de secours";
   }
 }
 
@@ -889,6 +1057,7 @@ function handleAction(action) {
   };
   if (messages[action]) return showToast(messages[action]);
   if (action === "record-cash") return openQuickPayment();
+  if (action === "send-login-link") return sendLoginLink();
   if (action === "auth-or-signout") return authOrSignOut();
   if (action === "auth-or-sync") return authOrSync();
   if (action === "open-voice") return openSheet("voice-sheet");
@@ -965,6 +1134,7 @@ function setupEvents() {
       reviewMemberButton.dataset.reviewMember,
       "approve",
       reviewMemberButton.dataset.accessLevel,
+      (reviewMemberButton.dataset.writeFunds || "").split(",").filter(Boolean),
       reviewMemberButton
     );
     const rejectMemberButton = event.target.closest("[data-reject-member]");
@@ -972,6 +1142,7 @@ function setupEvents() {
       rejectMemberButton.dataset.rejectMember,
       "reject",
       "read",
+      [],
       rejectMemberButton
     );
     const actionButton = event.target.closest("[data-action]");
@@ -987,8 +1158,15 @@ function setupEvents() {
   document.querySelector("#modal-backdrop").addEventListener("click", closeSheets);
   document.querySelector("#payment-form").addEventListener("submit", recordCashPayment);
   document.querySelector("#fund-config-form").addEventListener("submit", submitFundConfiguration);
+  document.querySelector("#member-schedule-form").addEventListener("submit", submitMemberSchedule);
+  document.querySelector("#admin-password-form").addEventListener("submit", submitAdminPassword);
   document.querySelector("#auth-form").addEventListener("submit", submitAuth);
   document.querySelector("#payment-member").addEventListener("change", updateQuickPaymentSummary);
+  document.querySelector("#payment-contribution").addEventListener("change", updateQuickPaymentSummary);
+  document.querySelector("#schedule-member").addEventListener("change", hydrateScheduleForm);
+  document.querySelector("#schedule-fund").addEventListener("change", hydrateScheduleForm);
+  document.querySelector("#schedule-start").addEventListener("change", updateSchedulePreview);
+  document.querySelector("#schedule-end").addEventListener("change", updateSchedulePreview);
   document.querySelectorAll("[data-filter]").forEach((button) => button.addEventListener("click", () => {
     currentFilter = button.dataset.filter;
     document.querySelectorAll("[data-filter]").forEach((item) => item.classList.toggle("active", item === button));

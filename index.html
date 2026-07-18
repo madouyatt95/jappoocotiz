@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=7" />
+    <link rel="stylesheet" href="./styles.css?v=8" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -161,6 +161,15 @@
             <div><h2 id="profile-name">Non connecté</h2><p id="profile-meta">Connectez-vous pour voir votre situation réelle</p><span id="profile-role">Accès protégé</span></div>
           </article>
           <button class="primary-btn full profile-auth-button" id="auth-button" type="button" data-action="auth-or-signout">Se connecter par e-mail</button>
+          <section class="admin-password-card hidden" id="admin-password-section" aria-labelledby="admin-password-title">
+            <div class="voice-title"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><p class="eyebrow">Administrateur</p><h2 id="admin-password-title">Créer mon mot de passe</h2></div></div>
+            <p>Votre session ouverte par e-mail permet de définir maintenant un mot de passe permanent.</p>
+            <form id="admin-password-form">
+              <label class="form-field"><span>Nouveau mot de passe</span><input id="admin-new-password" type="password" autocomplete="new-password" minlength="10" required placeholder="10 caractères minimum" /></label>
+              <label class="form-field"><span>Confirmer le mot de passe</span><input id="admin-confirm-password" type="password" autocomplete="new-password" minlength="10" required placeholder="Répétez le mot de passe" /></label>
+              <button class="primary-btn full" type="submit">Enregistrer mon mot de passe</button>
+            </form>
+          </section>
           <section class="voice-settings" aria-labelledby="voice-settings-title">
             <div class="voice-title"><span class="feature-icon indigo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg></span><div><p class="eyebrow">Accessibilité</p><h2 id="voice-settings-title">Situation vocale</h2></div></div>
             <p>Le micro sert uniquement à écouter où vous en êtes dans vos cotisations. Il ne peut créer ni modifier un paiement.</p>
@@ -184,7 +193,7 @@
             <div class="admin-role"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><small>Autorisation Supabase vérifiée</small><strong id="admin-role-label">Personne habilitée</strong></div><em class="cash-only-badge">Espèces uniquement</em></div>
             <section class="section-block member-access-section hidden" id="member-access-section" aria-labelledby="member-access-title">
               <div class="section-heading"><div><p class="eyebrow">Validation obligatoire</p><h2 id="member-access-title">Comptes et droits</h2></div><span class="count-badge" id="pending-member-count">0</span></div>
-              <p class="section-help">Chaque nouveau compte reste bloqué jusqu’à votre choix : lecture seule ou lecture avec saisie des paiements.</p>
+              <p class="section-help">Chaque nouveau compte reste bloqué jusqu’à votre choix : lecture seule, saisie sur la caisse Famille, la caisse Décès ou les deux.</p>
               <div class="member-access-list" id="member-access-list"></div>
             </section>
             <div class="admin-kpis">
@@ -203,6 +212,17 @@
                 <button type="button" role="tab" aria-selected="false" data-admin-fund="death">Décès</button>
               </div>
               <div class="member-status-list" id="member-status-list"></div>
+            </section>
+            <section class="section-block" id="member-schedule-section" aria-labelledby="member-schedule-title">
+              <div class="section-heading"><div><p class="eyebrow">Rétroactif depuis 2021</p><h2 id="member-schedule-title">Définir les mensualités dues</h2></div></div>
+              <p class="section-help">Choisissez un membre, une caisse et la période exacte. Les paiements existants sont conservés.</p>
+              <form class="schedule-form" id="member-schedule-form">
+                <label class="form-field"><span>Membre</span><select id="schedule-member" required><option value="">Choisir un membre</option></select></label>
+                <label class="form-field"><span>Caisse</span><select id="schedule-fund" required><option value="">Choisir une caisse</option></select></label>
+                <div class="form-grid"><label class="form-field"><span>Du mois</span><input id="schedule-start" type="month" min="2021-01" required /></label><label class="form-field"><span>Au mois inclus</span><input id="schedule-end" type="month" min="2021-01" required /></label></div>
+                <div class="schedule-preview" id="schedule-preview"><span>Période</span><strong>Sélectionnez un membre et une caisse</strong><small>Les mensualités manquantes seront générées automatiquement.</small></div>
+                <button class="primary-btn full" type="submit">Calculer les mensualités dues</button>
+              </form>
             </section>
             <section class="section-block" aria-labelledby="fund-settings-title">
               <div class="section-heading"><div><p class="eyebrow">Paramètres</p><h2 id="fund-settings-title">Configurer les caisses</h2></div></div>
@@ -288,11 +308,13 @@
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-heading"><div><p class="eyebrow">Accès sécurisé</p><h2 id="auth-title">Connexion à Jàppoo</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
       <form id="auth-form">
-        <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Aucun mot de passe</strong><p>Saisissez votre e-mail : vous recevrez un lien personnel qui vous connectera directement.</p></div></div>
+        <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Connexion administrateur</strong><p>Utilisez votre mot de passe. Le lien par e-mail reste disponible uniquement comme accès de secours.</p></div></div>
         <label class="form-field"><span>Adresse e-mail</span><input id="auth-email" type="email" autocomplete="email" inputmode="email" required placeholder="vous@exemple.com" /></label>
+        <label class="form-field"><span>Mot de passe administrateur</span><input id="auth-password" type="password" autocomplete="current-password" minlength="10" placeholder="Votre mot de passe" /></label>
         <p class="form-status" id="auth-status" role="status" aria-live="polite"></p>
         <button class="primary-btn full" id="auth-submit" type="submit">Se connecter</button>
-        <p class="auth-help">Votre compte déjà validé reste validé. Le lien sert uniquement à ouvrir votre session.</p>
+        <button class="link-login-button" id="auth-link-submit" type="button" data-action="send-login-link">Recevoir un lien de secours</button>
+        <p class="auth-help">Après votre connexion actuelle par lien, ouvrez Profil pour créer votre mot de passe.</p>
       </form>
     </section>
 
@@ -305,7 +327,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
-    <script src="./supabase-client.js?v=5"></script>
-    <script src="./app.js?v=8" defer></script>
+    <script src="./supabase-client.js?v=6"></script>
+    <script src="./app.js?v=9" defer></script>
   </body>
 </html>

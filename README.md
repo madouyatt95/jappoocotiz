@@ -9,7 +9,8 @@ PWA mobile-first pour consulter les cotisations de la **Caisse famille** et de l
 - seuls les responsables habilités accèdent à l’enregistrement ;
 - les paiements sont enregistrés uniquement en espèces ;
 - tout nouveau compte reste en attente de validation ;
-- l’administrateur attribue soit la lecture seule, soit la lecture avec saisie des paiements ;
+- l’administrateur a toujours l’écriture sur les deux caisses ;
+- pour chaque autre responsable, l’administrateur attribue la lecture seule ou l’écriture sur **Famille**, **Décès** ou **les deux** ;
 - l’onglet **Activité** présente les mouvements généraux sans exposer les identités aux comptes en lecture seule ;
 - aucune donnée de démonstration n’est préchargée ;
 - seules les deux caisses demandées sont présentes.
@@ -43,11 +44,12 @@ appliquées dans l’ordre de leur nom.
 1. Sur **Accueil**, vérifier que le solde et l’historique sont vides.
 2. Toucher **Ma situation** : l’assistant lit uniquement les cotisations.
 3. Sans connexion, ouvrir **Gestion** : la connexion Supabase est demandée et le formulaire de paiement reste inaccessible.
-4. Saisir son e-mail et toucher **Se connecter** : aucun mot de passe n’est demandé et le lien reçu ouvre directement la session.
-5. Créer un nouveau compte par ce même lien et vérifier qu’il reste en attente sans accès aux caisses.
-6. Avec un compte administrateur, valider ce compte en **Lecture seule** ou **Lecture + saisie**.
-7. Avec un droit de saisie, vérifier que **+ Ajouter un paiement** est immédiatement visible, choisir la caisse puis enregistrer un paiement en espèces.
-8. Vérifier que le mouvement apparaît dans l’activité générale uniquement après la réponse positive de Supabase.
+4. Après une première connexion par lien, ouvrir **Profil → Créer mon mot de passe**. Les connexions suivantes utilisent directement l’e-mail et ce mot de passe ; le lien reste un secours.
+5. Créer un nouveau compte et vérifier qu’il reste en attente sans accès aux caisses.
+6. Avec un compte administrateur, choisir **Lecture seule**, **Famille**, **Décès** ou **Les deux**.
+7. Avec un droit de saisie, vérifier que **+ Ajouter un paiement** est immédiatement visible et que seules les caisses autorisées sont proposées.
+8. Dans **Gestion → Définir les mensualités dues**, choisir un membre, une caisse, le premier et le dernier mois, puis vérifier le recalcul des arriérés.
+9. Vérifier que le mouvement apparaît dans l’activité générale uniquement après la réponse positive de Supabase.
 
 Le navigateur ne valide aucune écriture financière. Il conserve seulement un cache de lecture hors ligne ; Supabase reste la source de vérité. Les règles RLS limitent la consultation au membre concerné et l’enregistrement aux rôles habilités, avec `cash` comme unique moyen de paiement accepté par la base.
 
@@ -56,6 +58,8 @@ Le navigateur ne valide aucune écriture financière. Il conserve seulement un c
 - **Caisse famille** : 5 € par mois depuis janvier 2021 ;
 - **Caisse décès** : 5 € par mois depuis janvier 2021 ;
 - chaque caisse dispose de son propre affichage et peut être configurée par un administrateur ;
+- un responsable habilité peut définir, membre par membre et caisse par caisse, une plage de mensualités allant de janvier 2021 au mois courant ;
+- modifier cette plage conserve tous les paiements existants et annule uniquement les échéances impayées sorties de la plage ;
 - le bouton de paramétrage apparaît directement dans **Caisses** pour l’administrateur ;
 - un versement est réparti automatiquement sur les plus anciennes mensualités impayées ;
 - les boutons `1 mois`, `3 mois`, `6 mois` et `Tout` accélèrent la saisie en espèces.
