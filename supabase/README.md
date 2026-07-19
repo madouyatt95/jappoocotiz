@@ -1,7 +1,7 @@
 # Activation Supabase
 
 1. Ouvrir le projet Supabase qui correspond à la référence configurée.
-2. Exécuter les fichiers de `migrations/` dans l’ordre de leur nom dans le SQL Editor. La migration `202607190007_dynamic_funds_and_due_refresh.sql` ajoute les caisses extensibles. La migration `202607190008_governance_import_and_meeting.sql` ajoute les imports, exceptions, dépenses à double validation, justificatifs privés, audit, mode réunion et cibles de rappels.
+2. Exécuter les fichiers de `migrations/` dans l’ordre de leur nom dans le SQL Editor. La migration `202607190007_dynamic_funds_and_due_refresh.sql` ajoute les caisses extensibles. La migration `202607190008_governance_import_and_meeting.sql` ajoute les imports, exceptions, dépenses à double validation, justificatifs privés, audit, mode réunion et cibles de rappels. La migration `202607190009_future_prepayment_periods.sql` autorise un administrateur à préparer et enregistrer un paiement couvrant des mensualités futures, dans une limite de dix ans.
 3. Dans **Authentication > URL Configuration**, définir le Site URL sur
    `https://jappo-cotiz.vercel.app` et autoriser
    `https://jappo-cotiz.vercel.app/**` comme Redirect URL.

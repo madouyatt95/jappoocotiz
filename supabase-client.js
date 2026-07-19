@@ -341,6 +341,10 @@
     return callRpc("record_cash_payment", payment);
   }
 
+  async function recordCashPaymentThroughMonth(payment) {
+    return callRpc("record_cash_payment_through_month", payment);
+  }
+
   async function recordCashExpense(expense) {
     return callRpc("record_cash_expense", expense);
   }
@@ -479,6 +483,7 @@
     requestPseudoMembership,
     signInMember,
     recordCashPayment,
+    recordCashPaymentThroughMonth,
     recordCashExpense,
     reviewCashExpense,
     setFundExpenseThreshold,
