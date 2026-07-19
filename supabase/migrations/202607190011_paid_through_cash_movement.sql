@@ -89,130 +89,8 @@ begin
 end;
 $$;
 
--- Convertit les éventuelles références administratives créées par la migration
--- 010 en paiements réels, sans recompter les allocations déjà présentes.
-do $$
-declare
-  situation record;
-  target_period record;
-  generated_payment_id uuid;
-begin
-  for situation in
-    select
-      schedule.family_id,
-      schedule.member_id,
-      schedule.fund_id,
-      schedule.paid_through_month,
-      coalesce(schedule.updated_by, schedule.created_by) as recorded_by,
-      min(period.period_start) as first_period_start,
-      (array_agg(period.id order by period.period_start))[1] as first_period_id,
-      sum(
-        period.amount_due - least(
-          period.amount_due,
-          coalesce((
-            select sum(allocation.amount)
-            from public.cash_payment_allocations allocation
-            join public.cash_payments payment on payment.id = allocation.payment_id
-            where allocation.period_id = period.id and payment.reversed_at is null
-          ), 0)
-        )
-      ) as amount_to_record
-    from public.member_fund_schedules schedule
-    join public.contribution_periods period
-      on period.member_id = schedule.member_id and period.fund_id = schedule.fund_id
-    where period.administrative_paid
-      and period.status not in ('exempt', 'cancelled')
-    group by schedule.family_id, schedule.member_id, schedule.fund_id,
-      schedule.paid_through_month, schedule.updated_by, schedule.created_by
-    having sum(
-      period.amount_due - least(
-        period.amount_due,
-        coalesce((
-          select sum(allocation.amount)
-          from public.cash_payment_allocations allocation
-          join public.cash_payments payment on payment.id = allocation.payment_id
-          where allocation.period_id = period.id and payment.reversed_at is null
-        ), 0)
-      )
-    ) > 0
-      and coalesce(schedule.updated_by, schedule.created_by) is not null
-  loop
-    generated_payment_id := gen_random_uuid();
-    insert into public.cash_payments(
-      id, family_id, fund_id, member_id, contribution_period_id,
-      amount, method, payment_date, period_start, note, recorded_by
-    ) values (
-      generated_payment_id,
-      situation.family_id,
-      situation.fund_id,
-      situation.member_id,
-      situation.first_period_id,
-      situation.amount_to_record,
-      'cash',
-      current_date,
-      situation.first_period_start,
-      'Régularisation à jour jusqu’à ' || to_char(situation.paid_through_month, 'MM/YYYY'),
-      situation.recorded_by
-    );
-
-    for target_period in
-      select
-        period.id,
-        period.amount_due - least(
-          period.amount_due,
-          coalesce((
-            select sum(allocation.amount)
-            from public.cash_payment_allocations allocation
-            join public.cash_payments payment on payment.id = allocation.payment_id
-            where allocation.period_id = period.id and payment.reversed_at is null
-          ), 0)
-        ) as amount_to_allocate
-      from public.contribution_periods period
-      where period.member_id = situation.member_id
-        and period.fund_id = situation.fund_id
-        and period.administrative_paid
-        and period.status not in ('exempt', 'cancelled')
-      order by period.period_start
-    loop
-      if target_period.amount_to_allocate > 0 then
-        insert into public.cash_payment_allocations(
-          payment_id, period_id, family_id, fund_id, member_id, amount
-        ) values (
-          generated_payment_id, target_period.id, situation.family_id,
-          situation.fund_id, situation.member_id, target_period.amount_to_allocate
-        );
-      end if;
-    end loop;
-  end loop;
-
-  with actuals as (
-    select
-      period.id,
-      least(
-        period.amount_due,
-        coalesce(sum(allocation.amount) filter (where payment.reversed_at is null), 0)
-      ) as actual_paid
-    from public.contribution_periods period
-    left join public.cash_payment_allocations allocation on allocation.period_id = period.id
-    left join public.cash_payments payment on payment.id = allocation.payment_id
-    where period.administrative_paid
-    group by period.id, period.amount_due
-  )
-  update public.contribution_periods period
-  set
-    amount_paid = actuals.actual_paid,
-    administrative_paid = false,
-    status = case
-      when period.status in ('exempt', 'cancelled') then period.status
-      when actuals.actual_paid >= period.amount_due then 'paid'
-      when actuals.actual_paid > 0 then 'partial'
-      when period.due_date < current_date then 'late'
-      else 'due'
-    end
-  from actuals
-  where period.id = actuals.id;
-end;
-$$;
+-- Une ancienne référence administrative est convertie au prochain clic de
+-- l’administrateur. Le SQL Editor n’a volontairement aucun droit d’encaisser.
 
 drop function if exists public.set_member_paid_through(uuid, uuid, date, date);
 
@@ -267,6 +145,37 @@ begin
   if normalized_paid_through > date_trunc('month', current_date + interval '10 years')::date then
     raise exception 'Le mois à jour ne peut pas dépasser dix ans après le mois courant';
   end if;
+
+  -- Retire l’ancienne estimation administrative et restaure uniquement les
+  -- paiements réellement enregistrés avant de calculer le complément.
+  with actuals as (
+    select
+      period.id,
+      least(
+        period.amount_due,
+        coalesce(sum(allocation.amount) filter (where payment.reversed_at is null), 0)
+      ) as actual_paid
+    from public.contribution_periods period
+    left join public.cash_payment_allocations allocation on allocation.period_id = period.id
+    left join public.cash_payments payment on payment.id = allocation.payment_id
+    where period.member_id = target_member.id
+      and period.fund_id = target_fund.id
+      and period.administrative_paid
+    group by period.id, period.amount_due
+  )
+  update public.contribution_periods period
+  set
+    amount_paid = actuals.actual_paid,
+    administrative_paid = false,
+    status = case
+      when period.status in ('exempt', 'cancelled') then period.status
+      when actuals.actual_paid >= period.amount_due then 'paid'
+      when actuals.actual_paid > 0 then 'partial'
+      when period.due_date < current_date then 'late'
+      else 'due'
+    end
+  from actuals
+  where period.id = actuals.id;
 
   insert into public.member_fund_schedules(
     family_id, member_id, fund_id, start_month, end_month, paid_through_month,
