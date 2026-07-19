@@ -461,10 +461,10 @@
 
   async function setMemberPaidThrough(schedule) {
     try {
-      return await callRpc("set_member_paid_through", schedule);
+      return await callRpc("record_paid_through_movement", schedule);
     } catch (error) {
-      if (/set_member_paid_through|schema cache/i.test(String(error?.message || ""))) {
-        throw new Error("La mise à jour Supabase 010 doit être installée avant d’utiliser « À jour jusqu’à ».");
+      if (/record_paid_through_movement|schema cache/i.test(String(error?.message || ""))) {
+        throw new Error("La migration Supabase 011 doit être installée avant d’utiliser « À jour jusqu’à ».");
       }
       throw error;
     }

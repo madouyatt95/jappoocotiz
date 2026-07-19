@@ -1647,21 +1647,28 @@ async function submitMemberSchedule(event) {
   submit.disabled = true;
   submit.textContent = "Enregistrement…";
   try {
-    await window.JappoBackend.setMemberPaidThrough({
+    const movement = await window.JappoBackend.setMemberPaidThrough({
       p_member_id: values.memberId,
       p_fund_id: values.fundId,
       p_start_month: `${values.start}-01`,
       p_paid_through_month: `${values.end}-01`
     });
+    if (movement?.payment_id) {
+      await window.JappoBackend.sendPaymentPush(movement.payment_id, "recorded").catch(() => null);
+    }
     await syncFromBackend({ quiet: true });
     const difference = monthDifference(values.end, currentMonthValue());
     const totalPaid = fundSituation(values.memberId, values.fundId).paid;
+    const amountRecorded = Number(movement?.amount_recorded || 0);
     const statusMessage = difference > 0
       ? `${values.member.full_name} est à jour jusqu’à ${formatPeriod(values.end)} : ${difference} mensualité${difference > 1 ? "s" : ""} reste${difference > 1 ? "nt" : ""} due${difference > 1 ? "s" : ""}.`
       : difference < 0
         ? `${values.member.full_name} est réglé ${Math.abs(difference)} mois à l’avance, jusqu’à ${formatPeriod(values.end)}.`
         : `${values.member.full_name} est à jour jusqu’au mois actuel.`;
-    showToast(`${statusMessage} Total déduit depuis ${formatPeriod(values.start)} : ${formatMoney(totalPaid)} €.`);
+    const movementMessage = amountRecorded > 0
+      ? `${formatMoney(amountRecorded)} € ajoutés à ${values.fund.name} et enregistrés dans Activité.`
+      : "Aucun nouvel encaissement : les mensualités étaient déjà enregistrées.";
+    showToast(`${statusMessage} ${movementMessage} Total versé depuis ${formatPeriod(values.start)} : ${formatMoney(totalPaid)} €.`);
   } catch (error) {
     showToast(error.message || "La situation du membre n’a pas pu être enregistrée.");
   } finally {

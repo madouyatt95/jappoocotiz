@@ -223,7 +223,7 @@
                 <div class="form-grid"><label class="form-field"><span>Cotise depuis</span><input id="schedule-start" type="month" min="2021-01" required /></label><label class="form-field"><span>À jour jusqu’au mois</span><input id="schedule-end" type="month" min="2021-01" required /></label></div>
                 <div class="schedule-preview" id="schedule-preview"><span>Période</span><strong>Sélectionnez un membre et une caisse</strong><small>Les mensualités manquantes seront générées automatiquement.</small></div>
                 <button class="primary-btn full" id="schedule-settle-through" type="submit" disabled>À jour jusqu’à ce mois</button>
-                <p class="schedule-action-help">Le mois choisi sert de référence : l’application indiquera ensuite les mensualités dues après ce mois ou l’avance par rapport à aujourd’hui.</p>
+                <p class="schedule-action-help">Le complément calculé sera enregistré comme paiement, ajouté au solde de la caisse et visible dans Activité.</p>
               </form>
               </div>
             </details>
@@ -457,7 +457,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
     <script src="./assets/fflate.min.js?v=1"></script>
-    <script src="./supabase-client.js?v=14"></script>
-    <script src="./app.js?v=18" defer></script>
+    <script src="./supabase-client.js?v=15"></script>
+    <script src="./app.js?v=19" defer></script>
   </body>
 </html>
