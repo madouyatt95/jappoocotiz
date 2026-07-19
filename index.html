@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=14" />
+    <link rel="stylesheet" href="./styles.css?v=15" />
     <title>Jàppoo Cotiz</title>
   </head>
   <body>
@@ -220,13 +220,10 @@
               <form class="schedule-form" id="member-schedule-form">
                 <label class="form-field"><span>Membre</span><select id="schedule-member" required><option value="">Choisir un membre</option></select></label>
                 <label class="form-field"><span>Caisse</span><select id="schedule-fund" required><option value="">Choisir une caisse</option></select></label>
-                <div class="form-grid"><label class="form-field"><span>Du mois</span><input id="schedule-start" type="month" min="2021-01" required /></label><label class="form-field"><span>Au mois inclus</span><input id="schedule-end" type="month" min="2021-01" required /></label></div>
+                <div class="form-grid"><label class="form-field"><span>Cotise depuis</span><input id="schedule-start" type="month" min="2021-01" required /></label><label class="form-field"><span>À jour jusqu’au mois</span><input id="schedule-end" type="month" min="2021-01" required /></label></div>
                 <div class="schedule-preview" id="schedule-preview"><span>Période</span><strong>Sélectionnez un membre et une caisse</strong><small>Les mensualités manquantes seront générées automatiquement.</small></div>
-                <div class="schedule-actions">
-                  <button class="primary-btn full" type="submit">Calculer les mensualités dues</button>
-                  <button class="secondary-btn full" id="schedule-settle-through" type="button" disabled>À jour jusqu’à ce mois</button>
-                </div>
-                <p class="schedule-action-help">Vous pouvez choisir un mois futur. Le bouton « À jour » calcule le montant total puis ouvre la validation du paiement en espèces.</p>
+                <button class="primary-btn full" id="schedule-settle-through" type="submit" disabled>À jour jusqu’à ce mois</button>
+                <p class="schedule-action-help">Le mois choisi sert de référence : l’application indiquera ensuite les mensualités dues après ce mois ou l’avance par rapport à aujourd’hui.</p>
               </form>
               </div>
             </details>
@@ -295,8 +292,6 @@
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-heading"><div><p class="eyebrow">Réservé aux personnes habilitées</p><h2 id="payment-title">Paiement en espèces</h2></div><button class="icon-btn soft" type="button" data-action="close-sheets" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
       <form id="payment-form">
-        <input id="payment-schedule-start" type="hidden" />
-        <input id="payment-through-month" type="hidden" />
         <div class="notice-card compact-notice"><span class="feature-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3M4 10h16v11H4z"/></svg></span><div><strong>Accès contrôlé</strong><p>Le membre ne peut pas enregistrer lui-même ce paiement.</p></div></div>
         <label class="form-field"><span>1. Membre</span><select id="payment-member" required><option value="">Choisir un membre</option></select></label>
         <div class="form-field"><span>2. Caisse</span><div class="quick-fund-grid" id="quick-fund-grid"></div><select class="visually-hidden" id="payment-contribution" required aria-label="Caisse concernée"></select></div>
@@ -462,7 +457,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./config.js?v=1"></script>
     <script src="./assets/fflate.min.js?v=1"></script>
-    <script src="./supabase-client.js?v=12"></script>
-    <script src="./app.js?v=16" defer></script>
+    <script src="./supabase-client.js?v=13"></script>
+    <script src="./app.js?v=17" defer></script>
   </body>
 </html>

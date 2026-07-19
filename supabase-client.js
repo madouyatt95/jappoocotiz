@@ -274,7 +274,7 @@
         })
         : Promise.resolve([membership]),
       query("member_fund_schedules", {
-        select: "id,family_id,member_id,fund_id,start_month,end_month,active,updated_at",
+        select: "id,family_id,member_id,fund_id,start_month,end_month,paid_through_month,active,updated_at",
         family_id: `eq.${familyId}`,
         active: "eq.true",
         order: "updated_at.desc"
@@ -339,10 +339,6 @@
 
   async function recordCashPayment(payment) {
     return callRpc("record_cash_payment", payment);
-  }
-
-  async function recordCashPaymentThroughMonth(payment) {
-    return callRpc("record_cash_payment_through_month", payment);
   }
 
   async function recordCashExpense(expense) {
@@ -447,6 +443,10 @@
     return callRpc("set_member_fund_schedule", schedule);
   }
 
+  async function setMemberPaidThrough(schedule) {
+    return callRpc("set_member_paid_through", schedule);
+  }
+
   async function deleteFamilyMember(memberId, confirmation) {
     return callRpc("delete_family_member", {
       p_member_id: memberId,
@@ -483,7 +483,6 @@
     requestPseudoMembership,
     signInMember,
     recordCashPayment,
-    recordCashPaymentThroughMonth,
     recordCashExpense,
     reviewCashExpense,
     setFundExpenseThreshold,
@@ -498,6 +497,7 @@
     reviewMemberAccess,
     resetMemberLoginCode,
     setMemberFundSchedule,
+    setMemberPaidThrough,
     deleteFamilyMember,
     reverseCashPayment,
     registerPushSubscription,
