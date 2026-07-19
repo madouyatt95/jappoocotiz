@@ -1,99 +1,7 @@
--- « À jour jusqu'à » devient un véritable encaissement : le complément
--- manquant est enregistré dans la caisse et apparaît dans les mouvements.
+-- Corrige l’ambiguïté entre la variable PL/pgSQL « payment » et l’alias SQL
+-- du même nom dans l’encaissement « à jour jusqu’à ».
 
 begin;
-
-create or replace function public.sync_fund_periods(target_fund_id uuid, actor_user_id uuid)
-returns integer
-language plpgsql
-security definer
-set search_path = public
-set row_security = off
-as $$
-#variable_conflict use_column
-declare
-  target_fund public.funds;
-  affected integer := 0;
-begin
-  select * into target_fund from public.funds where id = target_fund_id;
-  if target_fund.id is null then raise exception 'Caisse introuvable'; end if;
-
-  insert into public.contribution_periods(
-    family_id, fund_id, member_id, period_start, due_date,
-    amount_due, amount_paid, status, created_by
-  )
-  select
-    member.family_id,
-    target_fund.id,
-    member.id,
-    month_value::date,
-    make_date(extract(year from month_value)::integer, extract(month from month_value)::integer, target_fund.due_day),
-    target_fund.monthly_amount,
-    0,
-    case
-      when latest_exception.action = 'exempt' then 'exempt'
-      when latest_exception.action in ('suspend', 'leave') then 'cancelled'
-      when make_date(extract(year from month_value)::integer, extract(month from month_value)::integer, target_fund.due_day) < current_date then 'late'
-      else 'due'
-    end,
-    actor_user_id
-  from public.member_fund_schedules schedule
-  join public.family_members member
-    on member.id = schedule.member_id and member.family_id = schedule.family_id
-  cross join lateral generate_series(
-    greatest(date '2021-01-01', target_fund.start_date, schedule.start_month),
-    least(
-      greatest(
-        schedule.end_month,
-        coalesce(schedule.paid_through_month, schedule.end_month),
-        date_trunc('month', current_date)::date
-      ),
-      date_trunc('month', current_date + interval '10 years')::date
-    ),
-    interval '1 month'
-  ) month_value
-  left join lateral (
-    select fund_exception.action
-    from public.member_fund_exceptions fund_exception
-    where fund_exception.member_id = member.id
-      and fund_exception.fund_id = target_fund.id
-      and (
-        (fund_exception.action = 'leave' and month_value::date >= fund_exception.start_month)
-        or
-        (fund_exception.action <> 'leave' and month_value::date between fund_exception.start_month and coalesce(fund_exception.end_month, fund_exception.start_month))
-      )
-    order by fund_exception.created_at desc
-    limit 1
-  ) latest_exception on true
-  where schedule.fund_id = target_fund.id
-    and schedule.family_id = target_fund.family_id
-    and schedule.active
-    and member.active
-    and member.approval_status = 'approved'
-    and target_fund.active
-  on conflict (member_id, fund_id, period_start) do update set
-    due_date = excluded.due_date,
-    amount_due = case
-      when public.contribution_periods.amount_paid = 0 then excluded.amount_due
-      else public.contribution_periods.amount_due
-    end,
-    status = case
-      when excluded.status in ('exempt', 'cancelled') then excluded.status
-      when public.contribution_periods.amount_paid >= public.contribution_periods.amount_due then 'paid'
-      when public.contribution_periods.amount_paid > 0 then 'partial'
-      when excluded.due_date < current_date then 'late'
-      else 'due'
-    end;
-
-  get diagnostics affected = row_count;
-  return affected;
-end;
-$$;
-
--- Une ancienne référence administrative est convertie au prochain clic de
--- l’administrateur. Le SQL Editor n’a volontairement aucun droit d’encaisser.
-
-drop function if exists public.set_member_paid_through(uuid, uuid, date, date);
 
 create or replace function public.record_paid_through_movement(
   p_member_id uuid,
@@ -148,8 +56,6 @@ begin
     raise exception 'Le mois à jour ne peut pas dépasser dix ans après le mois courant';
   end if;
 
-  -- Retire l’ancienne estimation administrative et restaure uniquement les
-  -- paiements réellement enregistrés avant de calculer le complément.
   with actuals as (
     select
       period.id,
@@ -234,7 +140,6 @@ begin
 end;
 $$;
 
-revoke all on function public.sync_fund_periods(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.record_paid_through_movement(uuid, uuid, date, date) from public, anon;
 grant execute on function public.record_paid_through_movement(uuid, uuid, date, date) to authenticated;
 
