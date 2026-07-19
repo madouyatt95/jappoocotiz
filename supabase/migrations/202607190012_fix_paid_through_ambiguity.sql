@@ -119,14 +119,15 @@ begin
     and period.amount_paid < period.amount_due;
 
   if amount_to_record > 0 then
-    select public.record_cash_payment(
+    select * into recorded_payment
+    from public.record_cash_payment(
       target_member.family_id,
       target_fund.id,
       target_member.id,
       amount_to_record,
       current_date,
       'Mise à jour jusqu’à ' || to_char(normalized_paid_through, 'MM/YYYY')
-    ) into recorded_payment;
+    );
   end if;
 
   return jsonb_build_object(
