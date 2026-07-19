@@ -12,7 +12,7 @@ const checks = [
   ["orientation mobile", contents["manifest.webmanifest"].includes('"orientation": "portrait-primary"')],
   ["viewport et safe-area", contents["index.html"].includes("viewport-fit=cover") && contents["styles.css"].includes("env(safe-area-inset-bottom)")],
   ["mode plein écran", contents["styles.css"].includes("100dvh")],
-  ["service worker v17", contents["app.js"].includes("serviceWorker.register") && contents["sw.js"].includes("jappo-cotiz-v17")],
+  ["service worker v18", contents["app.js"].includes("serviceWorker.register") && contents["sw.js"].includes("jappo-cotiz-v18")],
   ["cache de lecture sans démo", contents["app.js"].includes("jappo-cotiz-read-cache-v3") && contents["app.js"].includes("payments: []") && contents["app.js"].includes("activities: []")],
   ["deux caisses initiales sans données fictives", contents["app.js"].includes('{ id: "family"') && contents["app.js"].includes('{ id: "death"') && !contents["app.js"].includes("Projet maison") && !contents["app.js"].includes("Fête familiale")],
   ["aucune identité fictive", !contents["index.html"].includes("Mahamadou") && !contents["app.js"].includes("Aminata") && !contents["app.js"].includes("Ousmane")],
@@ -26,7 +26,8 @@ const checks = [
 
 checks.push(["build statique Vercel", contents["vercel.json"].includes('"outputDirectory": "dist"') && contents["scripts/build.mjs"].includes("Build statique")]);
 checks.push(["configuration Supabase publique séparée", contents["index.html"].includes("config.js?v=1") && !contents["config.js"].includes("supabase.co")]);
-checks.push(["client Supabase authentifié", contents["index.html"].includes("supabase-client.js?v=13") && contents["supabase-client.js"].includes("Authorization: `Bearer") && contents["app.js"].includes("syncFromBackend")]);
+checks.push(["client Supabase authentifié", contents["index.html"].includes("supabase-client.js?v=14") && contents["supabase-client.js"].includes("Authorization: `Bearer") && contents["app.js"].includes("syncFromBackend")]);
+checks.push(["connexion conservée si migration 010 absente", contents["supabase-client.js"].includes("loadMemberFundSchedules") && contents["supabase-client.js"].includes("paid_through_month|schema cache") && contents["app.js"].includes('title.textContent = "Connexion conservée"') && contents["app.js"].includes("if (syncError || !workspace?.user)")]);
 checks.push(["connexion admin par mot de passe", contents["index.html"].includes('id="auth-password"') && contents["supabase-client.js"].includes('grant_type=password') && contents["app.js"].includes("signInWithPassword(email, password)")]);
 checks.push(["création du mot de passe admin", contents["index.html"].includes('id="admin-password-form"') && contents["supabase-client.js"].includes("updatePassword") && contents["app.js"].includes("submitAdminPassword")]);
 checks.push(["lien de connexion de secours", contents["index.html"].includes('data-action="send-login-link"') && contents["app.js"].includes("sendLoginLink") && contents["supabase-client.js"].includes("sendMagicLink")]);

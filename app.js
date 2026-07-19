@@ -28,6 +28,7 @@ let memberAccessInitialized = false;
 let workspace = null;
 let backendSession = null;
 let syncing = false;
+let syncError = "";
 let paymentImportRows = [];
 
 const statusConfig = {
@@ -1037,7 +1038,7 @@ function settlePaymentArrears() {
 }
 
 function renderIdentity() {
-  const connected = Boolean(backendSession && workspace?.user);
+  const connected = Boolean(backendSession);
   const member = workspace?.membership;
   const approved = Boolean(member?.active && member.approval_status === "approved");
   const displayName = member?.full_name || workspace?.user?.email || "Non connecté";
@@ -1072,6 +1073,9 @@ function renderIdentity() {
   if (syncing) {
     title.textContent = "Synchronisation…";
     detail.textContent = "Lecture sécurisée des données Supabase.";
+  } else if (syncError && connected) {
+    title.textContent = "Connexion conservée";
+    detail.textContent = `Synchronisation impossible : ${syncError}`;
   } else if (approved) {
     title.textContent = "Données Supabase synchronisées";
     detail.textContent = `${workspace.family?.name || "Ma famille"} • ${accessLabel(member)}`;
@@ -1806,11 +1810,13 @@ async function syncFromBackend({ quiet = false } = {}) {
   if (!window.JappoBackend?.configured()) {
     backendSession = null;
     workspace = null;
+    syncError = "Configuration Supabase absente";
     if (!quiet) showToast("La configuration Supabase est absente de ce déploiement.");
     renderAll();
     return;
   }
   syncing = true;
+  syncError = "";
   renderAll();
   try {
     backendSession = await window.JappoBackend.initializeSession();
@@ -1821,6 +1827,7 @@ async function syncFromBackend({ quiet = false } = {}) {
       applyWorkspace(await window.JappoBackend.loadWorkspace());
     }
   } catch (error) {
+    syncError = error.message || "La synchronisation Supabase a échoué.";
     if (!quiet) showToast(error.message || "La synchronisation Supabase a échoué.");
   } finally {
     syncing = false;
@@ -1843,8 +1850,9 @@ async function submitAuth(event) {
   status.textContent = "";
   try {
     backendSession = await window.JappoBackend.signInWithPassword(email, password);
-    event.target.reset();
     await syncFromBackend({ quiet: true });
+    if (syncError || !workspace?.user) throw new Error(syncError || "Les données du compte sont indisponibles.");
+    event.target.reset();
     closeSheets();
     showToast("Connexion réussie.");
   } catch (error) {
@@ -1947,6 +1955,7 @@ async function authOrSignOut() {
   await window.JappoBackend.signOut();
   backendSession = null;
   workspace = null;
+  syncError = "";
   state = cloneInitialState();
   saveState();
   renderAll();

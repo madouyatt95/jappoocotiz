@@ -273,12 +273,7 @@
           order: "created_at.desc"
         })
         : Promise.resolve([membership]),
-      query("member_fund_schedules", {
-        select: "id,family_id,member_id,fund_id,start_month,end_month,paid_through_month,active,updated_at",
-        family_id: `eq.${familyId}`,
-        active: "eq.true",
-        order: "updated_at.desc"
-      }),
+      loadMemberFundSchedules(familyId),
       administrator
         ? query("member_fund_exceptions", {
           select: "id,family_id,member_id,fund_id,action,start_month,end_month,note,created_by,created_at",
@@ -304,6 +299,27 @@
       exceptions,
       adminActivity
     };
+  }
+
+  async function loadMemberFundSchedules(familyId) {
+    const parameters = {
+      family_id: `eq.${familyId}`,
+      active: "eq.true",
+      order: "updated_at.desc"
+    };
+    try {
+      return await query("member_fund_schedules", {
+        ...parameters,
+        select: "id,family_id,member_id,fund_id,start_month,end_month,paid_through_month,active,updated_at"
+      });
+    } catch (error) {
+      if (!/paid_through_month|schema cache/i.test(String(error?.message || ""))) throw error;
+      const schedules = await query("member_fund_schedules", {
+        ...parameters,
+        select: "id,family_id,member_id,fund_id,start_month,end_month,active,updated_at"
+      });
+      return schedules.map((schedule) => ({ ...schedule, paid_through_month: null }));
+    }
   }
 
   async function callRpc(name, parameters) {
@@ -444,7 +460,14 @@
   }
 
   async function setMemberPaidThrough(schedule) {
-    return callRpc("set_member_paid_through", schedule);
+    try {
+      return await callRpc("set_member_paid_through", schedule);
+    } catch (error) {
+      if (/set_member_paid_through|schema cache/i.test(String(error?.message || ""))) {
+        throw new Error("La mise à jour Supabase 010 doit être installée avant d’utiliser « À jour jusqu’à ».");
+      }
+      throw error;
+    }
   }
 
   async function deleteFamilyMember(memberId, confirmation) {
